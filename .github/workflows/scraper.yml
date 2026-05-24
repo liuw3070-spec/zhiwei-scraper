@@ -29,6 +29,14 @@ jobs:
           cd scraper
           python amazon_bsr_scraper.py
 
+      - name: Upload to Dify
+        env:
+          DIFY_DATASET_API_KEY: ${{ secrets.DIFY_DATASET_API_KEY }}
+        run: |
+          pip install requests
+          cd scraper
+          python upload_to_dify.py
+
       - name: Commit output
         run: |
           git config user.name "github-actions[bot]"
