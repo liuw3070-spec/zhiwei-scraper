@@ -47,5 +47,6 @@ jobs:
             echo "No changes to commit"
           else
             git commit -m "采集快照: $(date +%Y-%m-%d)"
+            git pull --rebase origin master
             git push origin HEAD:master
           fi
