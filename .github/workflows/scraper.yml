@@ -42,13 +42,17 @@ jobs:
           python upload_to_dify.py
 
       - name: Commit and push output
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
+          git remote set-url origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
           git add scraper/output/
           if git diff --cached --quiet; then
             echo "No changes to commit"
           else
             git commit -m "采集快照: $(date +%Y-%m-%d)"
-            git push --force-with-lease origin HEAD:master
+            git fetch origin master && git rebase origin/master
+            git push origin HEAD:master
           fi
