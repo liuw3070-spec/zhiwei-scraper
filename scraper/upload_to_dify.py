@@ -79,8 +79,16 @@ def list_documents(keyword: str = "") -> list:
     return data.get("data", [])
 
 
+def delete_document(document_id: str) -> bool:
+    """删除知识库中的文档."""
+    url = f"{DIFY_BASE_URL}/datasets/{DATASET_ID}/documents/{document_id}"
+    headers = {"Authorization": f"Bearer {DIFY_API_KEY}"}
+    resp = requests.delete(url, headers=headers, timeout=30)
+    return resp.status_code == 200
+
+
 def upload():
-    """主流程: 找到最新 MD → 推送到 Dify."""
+    """主流程: 找到最新 MD → 清理旧快照 → 推送到 Dify."""
     md_path = find_latest_md()
     if not md_path:
         print("[ERROR] No markdown file found")
@@ -88,24 +96,20 @@ def upload():
 
     title = md_path.stem  # e.g. "Pet_Water_Fountain_20260524_122716"
     text = md_path.read_text(encoding="utf-8")
-
-    # 去掉前端元数据行 (采集时间等)，保留表格内容
-    # Dify 的分块策略对 Markdown 表格友好,保留原始格式
     print(f"[Upload] {title} ({len(text)} chars)")
 
-    # 检查是否已存在同名片文档
-    existing = list_documents(keyword=title)
-    if existing:
-        # 更新已有文档
-        doc_id = existing[0]["id"]
-        result = update_document(doc_id, text, title)
-        print(f"[Update] doc={doc_id} → {result.get('document', {}).get('display_status', result)}")
-    else:
-        # 创建新文档
-        result = create_document(text, title)
-        doc = result.get("document", {})
-        print(f"[Create] doc={doc.get('id')} batch={doc.get('batch')} → {doc.get('display_status', result)}")
+    # 清理旧的采集快照 (Pet_Water_Fountain_*)
+    all_docs = list_documents()
+    old = [d for d in all_docs if d["name"].startswith("Pet_Water_Fountain_")]
+    print(f"[Cleanup] Found {len(old)} old snapshot(s) to remove")
+    for d in old:
+        ok = delete_document(d["id"])
+        print(f"  [Delete] {d['name'][:60]} → {'OK' if ok else 'FAIL'}")
 
+    # 创建新文档
+    result = create_document(text, title)
+    doc = result.get("document", {})
+    print(f"[Create] doc={doc.get('id')} → {doc.get('display_status', result)}")
     return result
 
 
