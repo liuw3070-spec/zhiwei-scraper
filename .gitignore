@@ -1,5 +1,7 @@
 scraper/output/*.json
 !scraper/output/manifest.json
-scraper/output/*.png
+scraper/output/bsr_page.png
+scraper/output/*.tmp.png
+# 允许 blocked_*.png 进入版本控制，用于反爬诊断
 __pycache__/
 *.py[cod]

@@ -200,19 +200,44 @@ WebGLRenderingContext.prototype.getParameter = function(parameter) {
 
 
 def is_blocked_page(title: str, body_text: str = "") -> bool:
-    """快速检测是否命中 Amazon 反爬拦截页。"""
-    if not title:
+    """快速检测是否命中 Amazon 反爬拦截页。
+
+    判断依据（必须**真正的拦截页**才返回 True，正常商品页绝不应误报）：
+    1. body 中含 Captcha 明确关键短语
+    2. title 是纯 "Amazon.com" / "Robot Check" / "Sorry!" 类反爬页特征
+    3. title 含 "captcha"
+
+    注意：正常商品页 title 形如 "Amazon.com : Product Name..."，
+    含冒号+商品名，是正常页面，绝不能误判为拦截。
+    """
+    if not title and not body_text:
         return False
-    t = title.lower()
-    if any(x in t for x in ["robot check", "captcha", "sorry", "amazon.com"]) and "best seller" not in t:
-        pass
+
     body_low = (body_text or "").lower()
-    return (
-        "enter the characters you see" in body_low
-        or "to discuss automated access" in body_low
-        or "type the characters you see" in body_low
-        or t.startswith("amazon.com")
-    )
+    captcha_phrases = [
+        "enter the characters you see",
+        "type the characters you see",
+        "to discuss automated access",
+        "we just need to make sure you're not a robot",
+        "click the button below to continue shopping",
+    ]
+    if any(p in body_low for p in captcha_phrases):
+        return True
+
+    t = (title or "").strip().lower()
+    blocked_titles = {
+        "amazon.com",
+        "robot check",
+        "sorry! something went wrong on our end.",
+        "sorry!",
+        "amazon.com: page not found",
+    }
+    if t in blocked_titles:
+        return True
+    if "captcha" in t or "robot check" in t:
+        return True
+
+    return False
 
 
 # ============================================================

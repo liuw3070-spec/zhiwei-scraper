@@ -67,17 +67,52 @@ jobs:
           python upload_to_dify.py
         continue-on-error: true
 
-      - name: Commit and push output
+      - name: Commit and push output (self-healing)
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add scraper/output/ scraper/category_catalog.json
-          if git diff --cached --quiet; then
-            echo "No changes to commit"
-          else
-            CAT_TAG="${{ github.event.inputs.category }}"
-            if [ -z "$CAT_TAG" ]; then CAT_TAG="default"; fi
-            git commit -m "采集快照: $CAT_TAG @ $(date +%Y-%m-%d)"
-            git pull --rebase origin master
-            git push origin HEAD:master
-          fi
+
+          CAT_TAG="${{ github.event.inputs.category }}"
+          if [ -z "$CAT_TAG" ]; then CAT_TAG="default"; fi
+
+          for attempt in 1 2 3 4 5; do
+            echo "============ Attempt $attempt ============"
+
+            git add scraper/output/ scraper/category_catalog.json
+
+            if git diff --cached --quiet; then
+              echo "[Phase 1] No changes to commit, exiting clean."
+              exit 0
+            fi
+
+            git commit -m "采集快照: $CAT_TAG @ $(date +%Y-%m-%d) [attempt $attempt]"
+
+            # 拉取远程更新，manifest.json 冲突时用本地（待重新生成）
+            if ! git pull --rebase -X theirs origin master 2>&1; then
+              echo "[Phase 2] Rebase failed, aborting and retrying..."
+              git rebase --abort 2>/dev/null || true
+              git reset --soft HEAD~1 2>/dev/null || true
+              sleep $((attempt * 3))
+              continue
+            fi
+
+            # 重新生成 manifest，确保反映「远程已有快照 + 本次新增快照」的全集
+            cd scraper && python update_manifest.py && cd ..
+            if ! git diff --quiet scraper/output/manifest.json; then
+              git add scraper/output/manifest.json
+              git commit --amend --no-edit
+              echo "[Phase 3] Manifest regenerated and amended."
+            fi
+
+            if git push origin HEAD:master; then
+              echo "[Phase 4] Push success on attempt $attempt"
+              exit 0
+            fi
+
+            echo "[Phase 4] Push rejected (likely concurrent push), rolling back and retrying..."
+            git reset --soft HEAD~1 2>/dev/null || true
+            sleep $((attempt * 3))
+          done
+
+          echo "[FATAL] All 5 attempts failed. Manual intervention required."
+          exit 1
