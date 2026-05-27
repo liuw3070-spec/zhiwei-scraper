@@ -1,4 +1,5 @@
 scraper/output/*.json
+!scraper/output/manifest.json
 scraper/output/*.png
 __pycache__/
 *.py[cod]

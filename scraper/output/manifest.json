@@ -1,0 +1,23 @@
+{
+  "categories": {
+    "Pet Water Fountain": {
+      "aliases": [
+        "Pet Water Dispenser",
+        "Cat Water Fountain",
+        "宠物饮水机",
+        "猫饮水机"
+      ],
+      "latest_file": "Pet_Water_Fountain_20260524_191054.md",
+      "scraped_at": "2026-05-24T19:10:54Z",
+      "asin_count": 10,
+      "market": "amazon.com",
+      "bsr_node_id": "2975263011",
+      "status": "ok",
+      "history_files": [
+        "Pet_Water_Fountain_20260524_191054.md"
+      ]
+    }
+  },
+  "updated_at": "2026-05-27T18:55:08Z",
+  "freshness_days": 7
+}
