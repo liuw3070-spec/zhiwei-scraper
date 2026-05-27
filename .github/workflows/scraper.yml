@@ -2,8 +2,19 @@ name: Amazon BSR 采集
 
 on:
   schedule:
-    - cron: "0 18 * * *"   # UTC 18:00 = 北京时间凌晨2点
-  workflow_dispatch:        # 手动触发
+    - cron: "0 18 * * *"   # UTC 18:00 = 北京时间凌晨 2 点（默认抓 Pet Water Fountain）
+  workflow_dispatch:
+    inputs:
+      category:
+        description: '目标品类（任意大小写/中文/英文/别名，会从 category_catalog.json 解析）。留空则按 DEFAULT_CONFIG 抓取。'
+        required: false
+        default: ''
+        type: string
+      max_products:
+        description: '最大产品数（覆盖 DEFAULT_CONFIG.max_products，留空则用默认 10）'
+        required: false
+        default: ''
+        type: string
 
 concurrency:
   group: scraper-push
@@ -31,9 +42,22 @@ jobs:
       - name: Run scraper
         env:
           CI: "true"
+          SCRAPE_CATEGORY: ${{ github.event.inputs.category }}
         run: |
           cd scraper
-          python amazon_bsr_scraper.py
+          ARGS=""
+          if [ -n "${{ github.event.inputs.category }}" ]; then
+            ARGS="$ARGS --category \"${{ github.event.inputs.category }}\""
+          fi
+          if [ -n "${{ github.event.inputs.max_products }}" ]; then
+            ARGS="$ARGS --max-products ${{ github.event.inputs.max_products }}"
+          fi
+          eval "python amazon_bsr_scraper.py $ARGS"
+
+      - name: Update manifest
+        run: |
+          cd scraper
+          python update_manifest.py
 
       - name: Upload to Dify
         env:
@@ -41,16 +65,19 @@ jobs:
         run: |
           cd scraper
           python upload_to_dify.py
+        continue-on-error: true
 
       - name: Commit and push output
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add scraper/output/
+          git add scraper/output/ scraper/category_catalog.json
           if git diff --cached --quiet; then
             echo "No changes to commit"
           else
-            git commit -m "采集快照: $(date +%Y-%m-%d)"
+            CAT_TAG="${{ github.event.inputs.category }}"
+            if [ -z "$CAT_TAG" ]; then CAT_TAG="default"; fi
+            git commit -m "采集快照: $CAT_TAG @ $(date +%Y-%m-%d)"
             git pull --rebase origin master
             git push origin HEAD:master
           fi

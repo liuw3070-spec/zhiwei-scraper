@@ -5,11 +5,13 @@ Amazon BSR + Reviews Scraper for 知微Agent.
 产出: 含 weight 和 date 字段的结构化 Markdown 快照
 """
 
+import argparse
 import asyncio
 import random
 import re
 import json
 import os
+import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from dataclasses import dataclass, field, asdict
@@ -17,31 +19,200 @@ from playwright.async_api import async_playwright, Page
 
 
 # ============================================================
-# CONFIG —— 品类配置 (换品类只改这里)
+# DEFAULT CONFIG —— 默认品类参数 (可被命令行 --category 覆盖)
 # ============================================================
-CONFIG = {
-    # ---- 品类 ----
+DEFAULT_CONFIG = {
     "category": "Pet Water Fountain",
     "search_keyword": "pet water fountain",
     "market": "amazon.com",
     "base_url": "https://www.amazon.com",
-    # ---- BSR 节点 (需实测验证) ----
     "bsr_url": "https://www.amazon.com/gp/bestsellers/pet-supplies/2975263011",
     "bsr_node_id": "2975263011",
     "bsr_node_path": "Pet Supplies > Cat Fountains",
-    # ---- 采集参数 ----
     "max_products": 10,
-    "max_review_pages": 3,       # 产品页翻页尝试次数
+    "max_review_pages": 3,
     "min_review_words": 50,
     "max_review_age_months": 18,
-    # ---- 节奏控制 (反反爬) ----
-    "headless": os.getenv("CI", "").lower() == "true" or False,  # CI 环境自动无头
-    "delay_min": 2.0,            # 最短随机延迟
-    "delay_max": 5.0,            # 最长随机延迟
-    "product_cooldown": 8.0,     # 产品间冷却
-    # ---- 输出 ----
+    "headless": os.getenv("CI", "").lower() == "true" or False,
+    "delay_min": 2.0,
+    "delay_max": 5.0,
+    "product_cooldown": 8.0,
     "output_dir": str(Path(__file__).parent / "output"),
 }
+
+
+# ============================================================
+# CATALOG —— 品类目录加载与解析
+# ============================================================
+CATALOG_PATH = Path(__file__).parent / "category_catalog.json"
+
+
+def load_catalog() -> dict:
+    """加载 category_catalog.json，返回 categories 字典。"""
+    if not CATALOG_PATH.exists():
+        return {}
+    try:
+        return json.loads(CATALOG_PATH.read_text(encoding="utf-8")).get("categories", {})
+    except Exception as e:
+        print(f"[Catalog] 加载失败: {e}", file=sys.stderr)
+        return {}
+
+
+def normalize_name(s: str) -> str:
+    return (s or "").strip().lower().replace("_", " ").replace("-", " ")
+
+
+def resolve_category(name: str, catalog: dict) -> tuple[str | None, dict | None]:
+    """根据输入名（任意大小写/中文/别名）找到 catalog 中的规范条目。
+
+    返回 (规范键名, 配置字典)，未匹配返回 (None, None)。
+    """
+    if not name:
+        return None, None
+    target = normalize_name(name)
+    for key, info in catalog.items():
+        if normalize_name(key) == target:
+            return key, info
+        for alias in info.get("aliases", []) or []:
+            if normalize_name(alias) == target:
+                return key, info
+    return None, None
+
+
+def build_config(args) -> dict:
+    """根据命令行参数 + catalog 构建最终 CONFIG。"""
+    cfg = dict(DEFAULT_CONFIG)
+    catalog = load_catalog()
+    requested = args.category or os.getenv("SCRAPE_CATEGORY", "").strip() or cfg["category"]
+
+    key, info = resolve_category(requested, catalog)
+    if not info:
+        print(f"[Catalog] 未找到品类 '{requested}'，使用 DEFAULT_CONFIG", file=sys.stderr)
+        return cfg
+
+    if "TODO_REPLACE" in str(info.get("bsr_url", "")) or "TODO_REPLACE" in str(info.get("bsr_node_id", "")):
+        print(
+            f"[Catalog] 品类 '{key}' 的 BSR 节点尚未填充（still TODO_REPLACE）。"
+            f"\n请先在 category_catalog.json 里把 bsr_url 与 bsr_node_id 替换为真实值。",
+            file=sys.stderr
+        )
+        sys.exit(2)
+
+    cfg["category"] = key
+    cfg["search_keyword"] = info.get("search_keyword", cfg["search_keyword"])
+    cfg["market"] = info.get("market", cfg["market"])
+    cfg["bsr_url"] = info["bsr_url"]
+    cfg["bsr_node_id"] = info["bsr_node_id"]
+    cfg["bsr_node_path"] = info.get("bsr_node_path", "")
+
+    if args.max_products:
+        cfg["max_products"] = args.max_products
+
+    print(f"[Catalog] 加载品类: {key}  |  BSR: {cfg['bsr_url']}", file=sys.stderr)
+    return cfg
+
+
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="知微 Amazon BSR Scraper")
+    parser.add_argument("--category", "-c", default="",
+                        help="目标品类名（任意大小写/中文/英文/别名，将自动归一化到 catalog 中的规范键）")
+    parser.add_argument("--max-products", type=int, default=0, help="覆盖默认产品数")
+    return parser.parse_args(argv)
+
+
+CONFIG = DEFAULT_CONFIG
+
+
+# ============================================================
+# STEALTH —— 反反爬资源池
+# ============================================================
+USER_AGENTS = [
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Safari/605.1.15",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:128.0) Gecko/20100101 Firefox/128.0",
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36",
+]
+
+VIEWPORTS = [
+    {"width": 1920, "height": 1080},
+    {"width": 1366, "height": 768},
+    {"width": 1536, "height": 864},
+    {"width": 1440, "height": 900},
+    {"width": 1680, "height": 1050},
+]
+
+STEALTH_INIT_JS = """
+// 1. 抹除 navigator.webdriver 痕迹
+Object.defineProperty(navigator, 'webdriver', { get: () => false });
+
+// 2. 伪造 plugins / mimeTypes (无头浏览器默认为空)
+Object.defineProperty(navigator, 'plugins', {
+    get: () => [
+        { name: 'Chrome PDF Plugin', description: 'Portable Document Format' },
+        { name: 'Chrome PDF Viewer', description: '' },
+        { name: 'Native Client', description: '' }
+    ]
+});
+Object.defineProperty(navigator, 'mimeTypes', {
+    get: () => [{ type: 'application/pdf' }]
+});
+
+// 3. 伪造 navigator.languages
+Object.defineProperty(navigator, 'languages', {
+    get: () => ['en-US', 'en']
+});
+
+// 4. 伪造 chrome.runtime (Chromium headless 缺失)
+window.chrome = {
+    runtime: { connect: () => {}, sendMessage: () => {} },
+    loadTimes: () => {},
+    csi: () => {},
+    app: {}
+};
+
+// 5. 修复 permissions.query (无头浏览器 notifications 永远 default)
+const origQuery = navigator.permissions && navigator.permissions.query;
+if (origQuery) {
+    navigator.permissions.query = (parameters) => (
+        parameters && parameters.name === 'notifications'
+            ? Promise.resolve({ state: Notification.permission })
+            : origQuery(parameters)
+    );
+}
+
+// 6. 隐藏 Playwright 注入痕迹
+delete window.__playwright;
+delete window.__pw_manual;
+delete window.__PW_inspect;
+
+// 7. WebGL 指纹随机化 (固定指纹会被识别)
+const getParameter = WebGLRenderingContext.prototype.getParameter;
+WebGLRenderingContext.prototype.getParameter = function(parameter) {
+    if (parameter === 37445) return 'Intel Inc.';
+    if (parameter === 37446) return 'Intel Iris OpenGL Engine';
+    return getParameter.call(this, parameter);
+};
+"""
+
+
+def is_blocked_page(title: str, body_text: str = "") -> bool:
+    """快速检测是否命中 Amazon 反爬拦截页。"""
+    if not title:
+        return False
+    t = title.lower()
+    if any(x in t for x in ["robot check", "captcha", "sorry", "amazon.com"]) and "best seller" not in t:
+        pass
+    body_low = (body_text or "").lower()
+    return (
+        "enter the characters you see" in body_low
+        or "to discuss automated access" in body_low
+        or "type the characters you see" in body_low
+        or t.startswith("amazon.com")
+    )
 
 
 # ============================================================
@@ -133,25 +304,77 @@ class AmazonScraper:
     # ---- Browser lifecycle ----
 
     async def setup(self):
+        ua = random.choice(USER_AGENTS)
+        viewport = random.choice(VIEWPORTS)
+
         self.playwright = await async_playwright().start()
         self.browser = await self.playwright.chromium.launch(
             headless=self.cfg["headless"],
-            args=["--disable-blink-features=AutomationControlled", "--no-sandbox"],
+            args=[
+                "--disable-blink-features=AutomationControlled",
+                "--no-sandbox",
+                "--disable-dev-shm-usage",
+                "--disable-features=IsolateOrigins,site-per-process",
+                "--disable-site-isolation-trials",
+                "--disable-web-security",
+                f"--window-size={viewport['width']},{viewport['height']}",
+                "--lang=en-US,en",
+            ],
         )
         self.context = await self.browser.new_context(
-            user_agent=(
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) "
-                "Chrome/140.0.0.0 Safari/537.36"
-            ),
-            viewport={"width": 1920, "height": 1080},
+            user_agent=ua,
+            viewport=viewport,
             locale="en-US",
+            timezone_id="America/Los_Angeles",
+            extra_http_headers={
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
+                "Accept-Language": "en-US,en;q=0.9",
+                "Accept-Encoding": "gzip, deflate, br",
+                "Cache-Control": "max-age=0",
+                "Sec-Ch-Ua": '"Chromium";v="140", "Not?A_Brand";v="24", "Google Chrome";v="140"',
+                "Sec-Ch-Ua-Mobile": "?0",
+                "Sec-Ch-Ua-Platform": '"Windows"',
+                "Sec-Fetch-Dest": "document",
+                "Sec-Fetch-Mode": "navigate",
+                "Sec-Fetch-Site": "none",
+                "Sec-Fetch-User": "?1",
+                "Upgrade-Insecure-Requests": "1",
+            },
         )
-        await self.context.add_init_script(
-            "Object.defineProperty(navigator, 'webdriver', { get: () => false });"
-        )
+        await self.context.add_init_script(STEALTH_INIT_JS)
         self.page: Page = await self.context.new_page()
-        print("[setup] Browser ready")
+        print(f"[setup] Browser ready  UA={ua[:60]}…  Viewport={viewport['width']}x{viewport['height']}")
+
+    async def human_like_scroll(self, total_steps: int = 6):
+        """模拟真人阅读：分段滚动 + 随机停顿。"""
+        for i in range(total_steps):
+            scroll_y = random.randint(300, 700)
+            await self.page.mouse.wheel(0, scroll_y)
+            await asyncio.sleep(random.uniform(0.8, 1.8))
+        try:
+            await self.page.mouse.move(
+                random.randint(100, 800),
+                random.randint(100, 600),
+                steps=random.randint(5, 15)
+            )
+        except Exception:
+            pass
+
+    async def detect_block(self) -> bool:
+        """快速检测当前页是否被 Amazon 拦截。"""
+        try:
+            title = await self.page.title()
+            body_text = await self.page.evaluate("() => document.body ? document.body.innerText.substring(0, 800) : ''")
+            if is_blocked_page(title, body_text):
+                print(f"[BLOCK DETECTED] title='{title[:60]}'  body_snippet='{body_text[:200]}'")
+                try:
+                    await self.page.screenshot(path=str(self.output_dir / f"blocked_{datetime.now().strftime('%H%M%S')}.png"))
+                except Exception:
+                    pass
+                return True
+        except Exception:
+            pass
+        return False
 
     async def teardown(self):
         await self.browser.close()
@@ -183,7 +406,16 @@ class AmazonScraper:
         print(f"\n[BSR] {url}")
         await self.page.goto(url, wait_until="domcontentloaded", timeout=60000)
         await self.sleep("BSR page")
-        await self.page.screenshot(path=str(self.output_dir / "bsr_page.png"))
+
+        if await self.detect_block():
+            print("[BSR] 命中反爬拦截，跳过本次抓取")
+            return []
+
+        await self.human_like_scroll(total_steps=4)
+        try:
+            await self.page.screenshot(path=str(self.output_dir / "bsr_page.png"))
+        except Exception:
+            pass
 
         await self.validate_bsr_page()
 
@@ -270,10 +502,14 @@ class AmazonScraper:
             return []
         await self.sleep(f"product {asin}")
 
-        # 滚动加载懒渲染评论
+        if await self.detect_block():
+            print(f"  [SKIP] {asin} blocked by anti-bot")
+            return []
+
+        await self.human_like_scroll(total_steps=3)
         for pct in [0.5, 0.75]:
             await self.page.evaluate(f"window.scrollTo(0, document.body.scrollHeight * {pct})")
-            await asyncio.sleep(1.0)
+            await asyncio.sleep(random.uniform(0.8, 1.5))
 
         all_collected: list[Review] = []
 
@@ -484,7 +720,9 @@ class AmazonScraper:
 # ============================================================
 
 async def main():
-    await AmazonScraper(CONFIG).run()
+    args = parse_args()
+    cfg = build_config(args)
+    await AmazonScraper(cfg).run()
 
 if __name__ == "__main__":
     asyncio.run(main())

@@ -1,0 +1,30 @@
+{
+  "_doc": "Category catalog · 品类目录。新增品类时在此追加。键名建议用 Amazon 主流叫法的 Title Case。'aliases' 列出中文/同义词，N2D 会做归一化匹配。",
+  "_updated_at": "2026-05-28",
+  "categories": {
+    "Pet Water Fountain": {
+      "search_keyword": "pet water fountain",
+      "market": "amazon.com",
+      "bsr_url": "https://www.amazon.com/gp/bestsellers/pet-supplies/2975263011",
+      "bsr_node_id": "2975263011",
+      "bsr_node_path": "Pet Supplies > Cat Fountains",
+      "aliases": ["Pet Water Dispenser", "Cat Water Fountain", "宠物饮水机", "猫饮水机"]
+    },
+    "Cat Litter Box": {
+      "search_keyword": "cat litter box",
+      "market": "amazon.com",
+      "bsr_url": "TODO_REPLACE_WITH_REAL_URL",
+      "bsr_node_id": "TODO_REPLACE_WITH_REAL_ID",
+      "bsr_node_path": "Pet Supplies > Cat Litter Boxes",
+      "aliases": ["猫砂盆", "Litter Box"]
+    },
+    "Neck Massager": {
+      "search_keyword": "neck massager",
+      "market": "amazon.com",
+      "bsr_url": "TODO_REPLACE_WITH_REAL_URL",
+      "bsr_node_id": "TODO_REPLACE_WITH_REAL_ID",
+      "bsr_node_path": "Health & Personal Care > Neck Massagers",
+      "aliases": ["颈部按摩仪", "颈椎按摩仪", "Neck Massage Device"]
+    }
+  }
+}
