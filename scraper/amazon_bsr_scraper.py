@@ -900,27 +900,36 @@ class AmazonScraper:
         return token
 
     def _score_category_name(self, keyword: str, name: str) -> int:
-        """匹配评分（0-100）。设计目标：精确叶子节点 > 模糊父节点。
+        """匹配评分（0-100）。优先级（高→低）：
+            完全等价（仅单复数差异）→ 100
+            关键词 ⊊ 分类（分类比 kw 更具体，如 'Yoga Mat Bags' vs 'yoga mat'）
+                → 100 - 15 × extra_token_count，下限 50
+            分类 ⊊ 关键词（分类是父节点更宽泛，如 'Yoga' vs 'yoga mat'）→ 55
+            token 部分重叠 → 0-80（按 recall × precision）
 
-          · 关键词 ⊆ 分类名（叶子比关键词更精确，如 'Yoga Mats' contains 'yoga mat'）→ 100
-          · 分类名 ⊆ 关键词（父节点比关键词更宽泛，如 'Yoga' in 'yoga mat'）→ 55
-              ⚠️ 必须低于叶子的 token 重叠最高分（80），否则会 early-terminate 在父节点
-          · token 重叠 → 按 recall × precision 比例 0-80
+        关键约束：'Yoga Mats' (100) > 'Yoga Mat Bags' (85) > 'Yoga' (55) > 'Mats' (40)
         """
         if not name:
             return 0
-        kw_low = keyword.lower().strip()
-        name_low = name.lower().strip()
-        if kw_low and kw_low in name_low:
-            return 100
-        if name_low and name_low in kw_low:
-            # 父节点：给中等分用作导航候选（优先下钻），但留出空间让叶子反超
-            return 55
-
         kw_tokens = {self._singularize(t) for t in self._tokens(keyword)}
         name_tokens = {self._singularize(t) for t in self._tokens(name)}
         if not kw_tokens or not name_tokens:
             return 0
+
+        # 完全等价（单复数归一后 token 集合相同）
+        if kw_tokens == name_tokens:
+            return 100
+
+        # 关键词 ⊊ 分类：分类比 kw 更具体（额外 token 越少越接近叶子）
+        if kw_tokens.issubset(name_tokens):
+            extra = len(name_tokens) - len(kw_tokens)
+            return max(50, 100 - 15 * extra)
+
+        # 分类 ⊊ 关键词：父节点（更宽泛），中等分用作导航候选
+        if name_tokens.issubset(kw_tokens):
+            return 55
+
+        # 部分重叠
         overlap = kw_tokens & name_tokens
         if not overlap:
             return 0
