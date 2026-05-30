@@ -900,7 +900,13 @@ class AmazonScraper:
         return token
 
     def _score_category_name(self, keyword: str, name: str) -> int:
-        """匹配评分：完全包含 100；token 重叠（含单复数互配）按比例 0-80。"""
+        """匹配评分（0-100）。设计目标：精确叶子节点 > 模糊父节点。
+
+          · 关键词 ⊆ 分类名（叶子比关键词更精确，如 'Yoga Mats' contains 'yoga mat'）→ 100
+          · 分类名 ⊆ 关键词（父节点比关键词更宽泛，如 'Yoga' in 'yoga mat'）→ 55
+              ⚠️ 必须低于叶子的 token 重叠最高分（80），否则会 early-terminate 在父节点
+          · token 重叠 → 按 recall × precision 比例 0-80
+        """
         if not name:
             return 0
         kw_low = keyword.lower().strip()
@@ -908,7 +914,8 @@ class AmazonScraper:
         if kw_low and kw_low in name_low:
             return 100
         if name_low and name_low in kw_low:
-            return 90
+            # 父节点：给中等分用作导航候选（优先下钻），但留出空间让叶子反超
+            return 55
 
         kw_tokens = {self._singularize(t) for t in self._tokens(keyword)}
         name_tokens = {self._singularize(t) for t in self._tokens(name)}
@@ -1048,9 +1055,23 @@ class AmazonScraper:
             pages_loaded += 1
             # 去掉和已访问 URL 相同的条目（避免看到父级/自身链接）
             cats = [c for c in cats if c["href"] not in visited]
+
+            # Amazon BSR 侧边栏在子目录下显示【相对父节点的简称】
+            # 例如在 "Yoga" 下的 "Yoga Mats" 显示为 "Mats"。
+            # 评分时同时尝试 raw name 和 "父节点名 + name" 的拼接，取最高分。
+            parent_last = breadcrumb.split(">")[-1].strip()
+
+            def _score(name: str) -> int:
+                s1 = self._score_category_name(kw_clean, name)
+                if parent_last:
+                    qualified = f"{parent_last} {name}"
+                    s2 = self._score_category_name(kw_clean, qualified)
+                    return max(s1, s2)
+                return s1
+
             print(f"[Discover/Tree] L{depth} [{breadcrumb}] → {len(cats)} 个子类目")
             for c in cats[:6]:
-                s = self._score_category_name(kw_clean, c["name"])
+                s = _score(c["name"])
                 tag = f" ★{s}" if s > 0 else ""
                 print(f"[Discover/Tree]   - {c['name']}{tag}")
             if len(cats) > 6:
@@ -1058,19 +1079,24 @@ class AmazonScraper:
 
             drill_candidates: list[tuple[int, dict, str]] = []
             for cat in cats:
-                score = self._score_category_name(kw_clean, cat["name"])
-                cat_path = f"{breadcrumb} > {cat['name']}"
+                score = _score(cat["name"])
+                # path 使用拼接后的合格名，方便后续 catalog 元信息可读
+                display_name = cat["name"]
+                if parent_last and self._score_category_name(kw_clean, f"{parent_last} {cat['name']}") > \
+                        self._score_category_name(kw_clean, cat["name"]):
+                    display_name = f"{parent_last} {cat['name']}"
+                cat_path = f"{breadcrumb} > {display_name}"
                 if score > best_score:
                     best_score = score
                     best = {
-                        "name": cat["name"],
+                        "name": display_name,
                         "href": cat["href"],
                         "node_id": cat["node_id"],
                         "slug": cat["slug"],
                         "path": cat_path,
                         "score": score,
                     }
-                    print(f"[Discover/Tree]   ✨ 新最佳 score={score}: {cat['name']!r}")
+                    print(f"[Discover/Tree]   ✨ 新最佳 score={score}: {display_name!r}")
                 if score > 0:
                     drill_candidates.append((score, cat, cat_path))
 
