@@ -942,20 +942,19 @@ class AmazonScraper:
             picks = [(n, slug_map[n]) for n in fallback_order if n in slug_map][:top_k]
         return picks
 
-    async def _scrape_dept_categories(self, slug: str) -> list[dict]:
-        """打开某部门的 BSR 页，从侧边栏抽取所有可见子类目（含 name/href/node_id）。
-        Amazon 侧边栏只展开当前层级，所以这一步拿到的是【该部门第 1-2 级】子类。
+    async def _scrape_bsr_sidebar(self, url: str) -> list[dict]:
+        """打开任意 BSR 页 URL，从侧边栏抽取当前层级的子分类。
+        返回 [{name, href, node_id, slug}, ...]。
         """
-        url = f"https://www.amazon.com/Best-Sellers/zgbs/{slug}/"
         try:
             await self.page.goto(url, wait_until="domcontentloaded", timeout=30000)
         except Exception as e:
-            print(f"[Discover/Tree]   {slug} 加载失败: {e}")
+            print(f"[Discover/Tree]   加载失败 ({url[:80]}): {e}")
             return []
         await self.sleep("dept page")
 
         if await self.detect_block():
-            print(f"[Discover/Tree]   {slug} 被反爬，跳过")
+            print(f"[Discover/Tree]   被反爬 ({url[:80]})")
             return []
 
         try:
@@ -963,7 +962,10 @@ class AmazonScraper:
                 """
                 () => {
                     const roots = document.querySelectorAll(
-                        '#zg_browseRoot a, .zg_browseRoot a, div[role="navigation"] a[href*="/zgbs/"], a[href*="/zgbs/"]'
+                        '#zg_browseRoot a, .zg_browseRoot a, '
+                        + 'div[role="navigation"] a[href*="/zgbs/"], '
+                        + 'div[role="group"] a[href*="/zgbs/"], '
+                        + 'a[href*="/zgbs/"]'
                     );
                     const out = [];
                     const seen = new Set();
@@ -980,7 +982,7 @@ class AmazonScraper:
                 """
             )
         except Exception as e:
-            print(f"[Discover/Tree]   {slug} 解析侧边栏异常: {e}")
+            print(f"[Discover/Tree]   侧边栏解析异常: {e}")
             return []
 
         parsed: list[dict] = []
@@ -997,18 +999,22 @@ class AmazonScraper:
         return parsed
 
     async def _discover_via_amazon_bsr_tree(self, keyword: str) -> dict | None:
-        """Path C：穷举 Amazon BSR 目录树，找包含 keyword 的叶子分类。
+        """Path C：BFS 递归下钻 Amazon BSR 目录树，找包含 keyword 的叶子分类。
 
         完全绕开搜索引擎：只走 /Best-Sellers/zgbs/<dept>/ 这条已验证不被拦截的路径。
 
         策略：
           1. 关键词 → 候选部门（启发式种子库 DEPT_KEYWORD_SEEDS）
-          2. 逐部门 Playwright 打开 BSR 页，解析侧边栏所有分类链接
-          3. 给每个分类名打分（完全包含 100 / token 重叠 0-80）
-          4. 跨部门取最高分；分数 ≥ 30 视为命中
+          2. BFS 逐层下钻（最多 MAX_DEPTH=3 层，MAX_PAGES=8 页）
+          3. 每层解析侧边栏子分类，评分匹配
+          4. 有 partial match（score>0）→ 优先下钻该分支
+          5. 全 0 命中 → 下钻该层前 2 个子分类（Amazon 按热度排，大概率覆盖主流品类）
 
-        时间预算：3 部门 × 2-3s/页 = 6-10s
+        时间预算：每页 2-3s → 总 16-24s（worst case 8 页）
         """
+        MAX_DEPTH = 3
+        MAX_PAGES = 8
+
         kw_clean = (keyword or "").strip()
         if not kw_clean:
             return None
@@ -1018,45 +1024,83 @@ class AmazonScraper:
         for n, s in candidate_depts:
             print(f"  - {n} (slug={s})")
 
+        # BFS queue: (url, depth, breadcrumb_path)
+        queue: list[tuple[str, int, str]] = []
+        for dept_name, slug in candidate_depts:
+            queue.append((
+                f"https://www.amazon.com/Best-Sellers/zgbs/{slug}/",
+                0,
+                dept_name,
+            ))
+
+        visited: set[str] = set()
         best: dict | None = None
         best_score = 0
+        pages_loaded = 0
 
-        for dept_name, slug in candidate_depts:
-            cats = await self._scrape_dept_categories(slug)
-            print(f"[Discover/Tree]   {dept_name} 抓到 {len(cats)} 个子类目")
-            if not cats:
+        while queue and pages_loaded < MAX_PAGES and best_score < 100:
+            url, depth, breadcrumb = queue.pop(0)
+            if depth > MAX_DEPTH or url in visited:
                 continue
+            visited.add(url)
 
+            cats = await self._scrape_bsr_sidebar(url)
+            pages_loaded += 1
+            # 去掉和已访问 URL 相同的条目（避免看到父级/自身链接）
+            cats = [c for c in cats if c["href"] not in visited]
+            print(f"[Discover/Tree] L{depth} [{breadcrumb}] → {len(cats)} 个子类目")
+            for c in cats[:6]:
+                s = self._score_category_name(kw_clean, c["name"])
+                tag = f" ★{s}" if s > 0 else ""
+                print(f"[Discover/Tree]   - {c['name']}{tag}")
+            if len(cats) > 6:
+                print(f"[Discover/Tree]   ... 还有 {len(cats) - 6} 个")
+
+            drill_candidates: list[tuple[int, dict, str]] = []
             for cat in cats:
                 score = self._score_category_name(kw_clean, cat["name"])
+                cat_path = f"{breadcrumb} > {cat['name']}"
                 if score > best_score:
                     best_score = score
                     best = {
-                        "dept": dept_name,
                         "name": cat["name"],
                         "href": cat["href"],
                         "node_id": cat["node_id"],
                         "slug": cat["slug"],
+                        "path": cat_path,
                         "score": score,
                     }
-                    print(f"[Discover/Tree]     ✨ 新最佳 score={score}: {cat['name']!r}")
+                    print(f"[Discover/Tree]   ✨ 新最佳 score={score}: {cat['name']!r}")
+                if score > 0:
+                    drill_candidates.append((score, cat, cat_path))
 
             if best_score >= 100:
                 break
 
+            # 决定下一层下钻哪些分支
+            if depth < MAX_DEPTH:
+                if drill_candidates:
+                    drill_candidates.sort(key=lambda x: -x[0])
+                    for _, cat, path in drill_candidates[:2]:
+                        queue.append((cat["href"], depth + 1, path))
+                else:
+                    # 全部 0 分：下钻前 2 个子类（Amazon 按热度排序，大概率覆盖主流品类）
+                    for cat in cats[:2]:
+                        queue.append((cat["href"], depth + 1, f"{breadcrumb} > {cat['name']}"))
+
         if not best or best_score < 30:
-            print(f"[Discover/Tree] ❌ 未找到分数 ≥ 30 的分类（最佳 {best_score}）")
+            print(f"[Discover/Tree] ❌ {pages_loaded} 页扫描完毕，未找到分数 ≥ 30 的分类（最佳 {best_score}）")
             return None
 
         canonical_url = f"https://www.amazon.com/gp/bestsellers/{best['slug']}/{best['node_id']}"
         print(
             f"[Discover/Tree] ✅ 命中: '{best['name']}' (score={best['score']}) "
-            f"在 {best['dept']}\n                  → {canonical_url}"
+            f"path={best['path']!r}\n                  → {canonical_url}"
         )
         return {
             "bsr_url": canonical_url,
             "bsr_node_id": best["node_id"],
-            "bsr_node_path": f"{best['dept']} > {best['name']}",
+            "bsr_node_path": best["path"],
             "_se_engine": "AmazonBSRTree",
         }
 
