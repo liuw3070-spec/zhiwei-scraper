@@ -287,6 +287,109 @@ VIEWPORTS = [
     {"width": 1680, "height": 1050},
 ]
 
+# ===== Amazon BSR 顶级部门表（用于 Path C 目录树发现） =====
+# 这些 URL 走 /Best-Sellers/zgbs/<slug>/ 路径，已验证不被 Amazon 反爬拦截。
+# (display_name, slug) 顺序无关，发现时会按关键词命中度排序。
+AMAZON_BSR_DEPTS: list[tuple[str, str]] = [
+    ("Amazon Devices & Accessories", "amazon-devices"),
+    ("Appliances", "appliances"),
+    ("Arts, Crafts & Sewing", "arts-crafts"),
+    ("Automotive", "automotive"),
+    ("Baby", "baby-products"),
+    ("Beauty & Personal Care", "beauty"),
+    ("Books", "books"),
+    ("Cell Phones & Accessories", "wireless"),
+    ("Clothing, Shoes & Jewelry", "fashion"),
+    ("Electronics", "electronics"),
+    ("Grocery & Gourmet Food", "grocery"),
+    ("Health & Household", "hpc"),
+    ("Home & Kitchen", "home-garden"),
+    ("Industrial & Scientific", "industrial"),
+    ("Movies & TV", "movies-tv"),
+    ("Musical Instruments", "musical-instruments"),
+    ("Office Products", "office-products"),
+    ("Patio, Lawn & Garden", "lawn-garden"),
+    ("Pet Supplies", "pet-supplies"),
+    ("Sports & Outdoors", "sporting-goods"),
+    ("Tools & Home Improvement", "hi"),
+    ("Toys & Games", "toys-and-games"),
+    ("Video Games", "videogames"),
+]
+
+# 关键词 → 优先部门 种子库（覆盖跨境电商常见品类 ≥ 90%）
+# 命中任一关键词即把该部门提到候选列表前面；未命中关键词则按部门字典序兜底
+DEPT_KEYWORD_SEEDS: dict[str, list[str]] = {
+    "Sports & Outdoors": [
+        "yoga", "mat", "fitness", "exercise", "gym", "weight", "dumbbell", "barbell",
+        "treadmill", "elliptical", "rowing", "bike", "cycling", "running", "hiking",
+        "tent", "camping", "ski", "snowboard", "swim", "fishing", "golf", "tennis",
+        "basketball", "soccer", "kayak", "paddle", "skate", "scooter",
+    ],
+    "Pet Supplies": [
+        "pet", "dog", "cat", "puppy", "kitten", "fish", "aquarium", "bird",
+        "litter", "fountain", "leash", "collar", "kennel", "crate", "feeder",
+    ],
+    "Home & Kitchen": [
+        "kitchen", "blender", "cookware", "knife", "skillet", "pan", "pot",
+        "vacuum", "robot vacuum", "lamp", "sofa", "bed", "mattress", "pillow",
+        "rug", "curtain", "towel", "bedding", "iron", "humidifier", "dehumidifier",
+        "air purifier", "fan", "espresso", "coffee maker", "kettle", "toaster",
+    ],
+    "Electronics": [
+        "phone", "smartphone", "laptop", "tablet", "headphone", "earbud", "speaker",
+        "bluetooth", "tv", "monitor", "camera", "drone", "smart watch", "smartwatch",
+        "soundbar", "router", "modem", "ssd", "hdd", "usb", "charger", "power bank",
+        "console", "gaming",
+    ],
+    "Beauty & Personal Care": [
+        "beauty", "makeup", "skincare", "shampoo", "conditioner", "lipstick",
+        "perfume", "cologne", "lotion", "razor", "trimmer", "hair dryer", "curling",
+        "straightener", "nail",
+    ],
+    "Health & Household": [
+        "vitamin", "supplement", "protein", "first aid", "thermometer", "scale",
+        "massage", "massager", "bandage", "blood pressure", "glucose", "mask",
+    ],
+    "Tools & Home Improvement": [
+        "drill", "saw", "tool", "hammer", "wrench", "ladder", "tape measure",
+        "screwdriver", "sander", "compressor", "flashlight", "lock",
+    ],
+    "Toys & Games": [
+        "toy", "lego", "puzzle", "doll", "board game", "card game", "plush",
+        "action figure", "rc car", "kite",
+    ],
+    "Baby": [
+        "baby", "infant", "toddler", "diaper", "stroller", "crib", "bottle",
+        "pacifier", "highchair", "car seat", "monitor",
+    ],
+    "Office Products": [
+        "desk", "chair", "stapler", "binder", "notebook", "printer", "pen",
+        "marker", "calculator", "label",
+    ],
+    "Automotive": [
+        "car", "auto", "tire", "wheel", "engine", "dash cam", "dashcam",
+        "obd", "jump starter",
+    ],
+    "Patio, Lawn & Garden": [
+        "garden", "patio", "lawn", "grill", "outdoor", "mower", "hose",
+        "planter", "shovel", "trimmer",
+    ],
+    "Clothing, Shoes & Jewelry": [
+        "shirt", "pants", "jacket", "dress", "shoes", "boot", "hat", "watch band",
+        "earring", "necklace", "ring", "bracelet",
+    ],
+    "Arts, Crafts & Sewing": [
+        "paint", "craft", "scissors", "yarn", "fabric", "sewing", "needle",
+        "marker pen", "sketch",
+    ],
+    "Musical Instruments": [
+        "guitar", "piano", "drum", "violin", "ukulele", "microphone", "midi",
+    ],
+    "Grocery & Gourmet Food": [
+        "coffee bean", "tea bag", "snack", "chocolate", "candy", "spice",
+    ],
+}
+
 STEALTH_INIT_JS = """
 // 1. 抹除 navigator.webdriver 痕迹
 Object.defineProperty(navigator, 'webdriver', { get: () => false });
@@ -777,15 +880,197 @@ class AmazonScraper:
             print(f"[Discover] enrich path 失败（不阻塞）: {e}")
         return ""
 
+    # ---- Path C: 穷举 Amazon BSR 目录树（绕开所有搜索引擎，最稳） ----
+
+    @staticmethod
+    def _tokens(text: str) -> set[str]:
+        """归一化分词：小写 + 提取字母数字 token + 去掉无意义停用词。"""
+        STOP = {"the", "a", "an", "of", "for", "and", "to", "with", "in", "on"}
+        return {t for t in re.findall(r"[a-z0-9]+", (text or "").lower()) if t not in STOP}
+
+    @staticmethod
+    def _singularize(token: str) -> str:
+        """粗糙的复数→单数，仅用于匹配（不改写原文）：mats→mat、boxes→box、puppies→puppy。"""
+        if len(token) > 4 and token.endswith("ies"):
+            return token[:-3] + "y"
+        if len(token) > 3 and token.endswith("es") and token[-3] in "sxz" + "ch"[0]:
+            return token[:-2]
+        if len(token) > 3 and token.endswith("s") and not token.endswith("ss"):
+            return token[:-1]
+        return token
+
+    def _score_category_name(self, keyword: str, name: str) -> int:
+        """匹配评分：完全包含 100；token 重叠（含单复数互配）按比例 0-80。"""
+        if not name:
+            return 0
+        kw_low = keyword.lower().strip()
+        name_low = name.lower().strip()
+        if kw_low and kw_low in name_low:
+            return 100
+        if name_low and name_low in kw_low:
+            return 90
+
+        kw_tokens = {self._singularize(t) for t in self._tokens(keyword)}
+        name_tokens = {self._singularize(t) for t in self._tokens(name)}
+        if not kw_tokens or not name_tokens:
+            return 0
+        overlap = kw_tokens & name_tokens
+        if not overlap:
+            return 0
+        recall = len(overlap) / len(kw_tokens)
+        precision = len(overlap) / len(name_tokens)
+        return int(80 * recall * (0.5 + 0.5 * precision))
+
+    def _pick_candidate_depts(self, keyword: str, top_k: int = 3) -> list[tuple[str, str]]:
+        """关键词 → 候选部门列表（按命中度倒序），最多 top_k 个。
+        DEPT_KEYWORD_SEEDS 命中权重最高；未命中则取字典前几个作兜底。
+        """
+        kw_low = keyword.lower()
+        scored: list[tuple[int, str, str]] = []
+        for dept_name, slug in AMAZON_BSR_DEPTS:
+            seeds = DEPT_KEYWORD_SEEDS.get(dept_name, [])
+            hit = sum(1 for s in seeds if s in kw_low)
+            if hit:
+                scored.append((hit, dept_name, slug))
+        scored.sort(key=lambda x: -x[0])
+        if scored:
+            picks = [(n, s) for _, n, s in scored[:top_k]]
+        else:
+            # 兜底：未命中任何种子，按通用程度尝试 Home & Kitchen / Electronics / Sports
+            fallback_order = ["Home & Kitchen", "Electronics", "Sports & Outdoors"]
+            slug_map = dict((n, s) for n, s in AMAZON_BSR_DEPTS)
+            picks = [(n, slug_map[n]) for n in fallback_order if n in slug_map][:top_k]
+        return picks
+
+    async def _scrape_dept_categories(self, slug: str) -> list[dict]:
+        """打开某部门的 BSR 页，从侧边栏抽取所有可见子类目（含 name/href/node_id）。
+        Amazon 侧边栏只展开当前层级，所以这一步拿到的是【该部门第 1-2 级】子类。
+        """
+        url = f"https://www.amazon.com/Best-Sellers/zgbs/{slug}/"
+        try:
+            await self.page.goto(url, wait_until="domcontentloaded", timeout=30000)
+        except Exception as e:
+            print(f"[Discover/Tree]   {slug} 加载失败: {e}")
+            return []
+        await self.sleep("dept page")
+
+        if await self.detect_block():
+            print(f"[Discover/Tree]   {slug} 被反爬，跳过")
+            return []
+
+        try:
+            cats = await self.page.evaluate(
+                """
+                () => {
+                    const roots = document.querySelectorAll(
+                        '#zg_browseRoot a, .zg_browseRoot a, div[role="navigation"] a[href*="/zgbs/"], a[href*="/zgbs/"]'
+                    );
+                    const out = [];
+                    const seen = new Set();
+                    roots.forEach(a => {
+                        const href = a.href || '';
+                        const name = (a.textContent || '').trim();
+                        if (!name || !href.includes('/zgbs/')) return;
+                        if (seen.has(href)) return;
+                        seen.add(href);
+                        out.push({ name, href });
+                    });
+                    return out;
+                }
+                """
+            )
+        except Exception as e:
+            print(f"[Discover/Tree]   {slug} 解析侧边栏异常: {e}")
+            return []
+
+        parsed: list[dict] = []
+        for c in cats or []:
+            m = re.search(r"/zgbs/([a-z0-9\-]+)/(\d+)", c.get("href", ""))
+            if not m:
+                continue
+            parsed.append({
+                "name": c["name"],
+                "href": c["href"],
+                "node_id": m.group(2),
+                "slug": m.group(1),
+            })
+        return parsed
+
+    async def _discover_via_amazon_bsr_tree(self, keyword: str) -> dict | None:
+        """Path C：穷举 Amazon BSR 目录树，找包含 keyword 的叶子分类。
+
+        完全绕开搜索引擎：只走 /Best-Sellers/zgbs/<dept>/ 这条已验证不被拦截的路径。
+
+        策略：
+          1. 关键词 → 候选部门（启发式种子库 DEPT_KEYWORD_SEEDS）
+          2. 逐部门 Playwright 打开 BSR 页，解析侧边栏所有分类链接
+          3. 给每个分类名打分（完全包含 100 / token 重叠 0-80）
+          4. 跨部门取最高分；分数 ≥ 30 视为命中
+
+        时间预算：3 部门 × 2-3s/页 = 6-10s
+        """
+        kw_clean = (keyword or "").strip()
+        if not kw_clean:
+            return None
+
+        candidate_depts = self._pick_candidate_depts(kw_clean, top_k=3)
+        print(f"[Discover/Tree] 关键词 {kw_clean!r} → 候选部门（按命中度）:")
+        for n, s in candidate_depts:
+            print(f"  - {n} (slug={s})")
+
+        best: dict | None = None
+        best_score = 0
+
+        for dept_name, slug in candidate_depts:
+            cats = await self._scrape_dept_categories(slug)
+            print(f"[Discover/Tree]   {dept_name} 抓到 {len(cats)} 个子类目")
+            if not cats:
+                continue
+
+            for cat in cats:
+                score = self._score_category_name(kw_clean, cat["name"])
+                if score > best_score:
+                    best_score = score
+                    best = {
+                        "dept": dept_name,
+                        "name": cat["name"],
+                        "href": cat["href"],
+                        "node_id": cat["node_id"],
+                        "slug": cat["slug"],
+                        "score": score,
+                    }
+                    print(f"[Discover/Tree]     ✨ 新最佳 score={score}: {cat['name']!r}")
+
+            if best_score >= 100:
+                break
+
+        if not best or best_score < 30:
+            print(f"[Discover/Tree] ❌ 未找到分数 ≥ 30 的分类（最佳 {best_score}）")
+            return None
+
+        canonical_url = f"https://www.amazon.com/gp/bestsellers/{best['slug']}/{best['node_id']}"
+        print(
+            f"[Discover/Tree] ✅ 命中: '{best['name']}' (score={best['score']}) "
+            f"在 {best['dept']}\n                  → {canonical_url}"
+        )
+        return {
+            "bsr_url": canonical_url,
+            "bsr_node_id": best["node_id"],
+            "bsr_node_path": f"{best['dept']} > {best['name']}",
+            "_se_engine": "AmazonBSRTree",
+        }
+
     async def discover_bsr_node(self) -> dict:
         """从 search_keyword 出发，自动找出该品类在 Amazon 的 BSR 叶子节点。
 
-        双路径设计：
-          Path A: Amazon /s?k=xxx → 商品页 BSR 块（最准，但 Action IP 经常被软拦截）
-          Path B: 第三方搜索引擎（DDG HTML）→ 从 site:amazon.com 结果里 grep BSR URL
-                  （绕过 Amazon 自家反爬；命中后进 BSR 静态页补 path）
+        三路径接力（任一成功即返回 + 回填 self.cfg）：
+          Path A: Amazon /s?k=xxx → 商品页 BSR 块（最准但 Action IP 经常被软拦截）
+          Path C: Amazon BSR 目录树穷举（绕开所有反爬，自主可控，6-10s）
+          Path B: 第三方搜索引擎 → 从 site:amazon.com 结果里 grep BSR URL
+                  （3 大引擎已实测对 BSR URL 索引稀疏，仅作最后兜底）
 
-        任一路径成功即返回 + 回填 self.cfg。两路都失败抛 RuntimeError。
+        顺序设计：A 是最高质量但易拦，C 是稳定可控（首选 fallback），
+        B 是"低概率高代价"的最后试探（保留是为了未来引擎索引改善时能受益）。
         """
         keyword = (self.cfg.get("search_keyword") or "").strip()
         if not keyword:
@@ -797,7 +1082,25 @@ class AmazonScraper:
         except Exception as e:
             path_a_err = e
             print(f"\n[Discover] ⚠️ Path A (Amazon 搜索) 失败: {e}")
-            print(f"[Discover] 🔄 切换 Path B (第三方搜索引擎绕过 Amazon 反爬)")
+            print(f"[Discover] 🔄 切换 Path C (Amazon BSR 目录树穷举)")
+
+        result_c = await self._discover_via_amazon_bsr_tree(keyword)
+        if result_c and result_c.get("bsr_node_id"):
+            self.cfg["bsr_url"] = result_c["bsr_url"]
+            self.cfg["bsr_node_id"] = result_c["bsr_node_id"]
+            self.cfg["bsr_node_path"] = result_c["bsr_node_path"]
+            print(
+                f"[Discover] ✅ Path C 命中 | node_id={result_c['bsr_node_id']} "
+                f"path={result_c['bsr_node_path']!r}"
+            )
+            return {
+                "bsr_url": self.cfg["bsr_url"],
+                "bsr_node_id": self.cfg["bsr_node_id"],
+                "bsr_node_path": self.cfg["bsr_node_path"],
+            }
+
+        print(f"\n[Discover] ⚠️ Path C 目录树未匹配")
+        print(f"[Discover] 🔄 切换 Path B (第三方搜索引擎，最后兜底)")
 
         result_b = self._discover_via_search_engine(keyword)
         if result_b and result_b.get("bsr_node_id"):
@@ -816,7 +1119,7 @@ class AmazonScraper:
             }
 
         raise RuntimeError(
-            f"discover: Path A 和 Path B 均失败（Path A: {path_a_err}; Path B: 无 BSR URL 命中）"
+            f"discover: 三路全部失败（A: {path_a_err}; C: 目录树未匹配; B: 无 BSR URL 命中）"
         )
 
     async def _discover_via_amazon_search(self, keyword: str) -> dict:
