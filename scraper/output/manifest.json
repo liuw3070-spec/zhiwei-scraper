@@ -23,18 +23,19 @@
     },
     "Yoga Mat": {
       "aliases": [],
-      "latest_file": "Yoga_Mat_20260530_184320.md",
-      "scraped_at": "2026-05-30T18:43:20Z",
+      "latest_file": "Yoga_Mat_20260530_191352.md",
+      "scraped_at": "2026-05-30T19:13:52Z",
       "asin_count": 10,
       "market": "amazon.com",
-      "bsr_node_id": "1240801011",
+      "bsr_node_id": "3422301",
       "status": "ok",
       "history_files": [
+        "Yoga_Mat_20260530_191352.md",
         "Yoga_Mat_20260530_184320.md",
         "Yoga_Mat_20260530_181720.md"
       ]
     }
   },
-  "updated_at": "2026-05-30T18:43:23Z",
+  "updated_at": "2026-05-30T19:13:53Z",
   "freshness_days": 7
 }
