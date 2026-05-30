@@ -12,6 +12,8 @@ import re
 import json
 import os
 import sys
+import urllib.request
+import urllib.parse
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from dataclasses import dataclass, field, asdict
@@ -376,6 +378,11 @@ def is_blocked_page(title: str, body_text: str = "") -> bool:
         return True
     if "captcha" in t or "robot check" in t:
         return True
+    # Amazon 软反爬：标题以 "sorry! something went wrong" 开头 + body 极短/空
+    # （正常商品页 body 至少 5000+ 字符，软反爬页只有几十字甚至空）
+    if t.startswith("sorry! something went wrong"):
+        if len(body_low.strip()) < 200:
+            return True
 
     return False
 
@@ -600,22 +607,222 @@ class AmazonScraper:
         except Exception as e:
             print(f"[Discover] dump 失败（不阻塞流程）: {e}")
 
+    # ---- Path B: 通过第三方搜索引擎（DDG HTML）找 BSR URL，绕过 Amazon 自家反爬 ----
+
+    # 全局 BSR URL 模式，复用于多个搜索引擎结果解析
+    _BSR_URL_RE = re.compile(
+        r"amazon\.com(/gp/bestsellers/[a-z0-9\-]+/(\d+))",
+        re.IGNORECASE,
+    )
+
+    def _grep_bsr_hits(self, html: str) -> list:
+        """从任意 HTML 文本里抽取 amazon BSR URL 候选，去重后返回 [(path, node_id), ...]"""
+        seen = set()
+        hits = []
+        for m in self._BSR_URL_RE.finditer(html):
+            path, nid = m.group(1), m.group(2)
+            if nid in seen:
+                continue
+            seen.add(nid)
+            hits.append((path, nid))
+        return hits
+
+    def _query_bing_html(self, query: str) -> str:
+        url = "https://www.bing.com/search?" + urllib.parse.urlencode({
+            "q": query, "form": "QBLH", "setlang": "en-US", "cc": "us"
+        })
+        req = urllib.request.Request(
+            url,
+            headers={
+                "User-Agent": random.choice(USER_AGENTS),
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                "Accept-Language": "en-US,en;q=0.9",
+            },
+        )
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            return resp.read().decode("utf-8", errors="ignore")
+
+    def _query_brave_html(self, query: str) -> str:
+        """Brave Search 公开端点，公开宣称不对 bot 限速，反爬最宽松。"""
+        url = "https://search.brave.com/search?" + urllib.parse.urlencode({
+            "q": query, "source": "web"
+        })
+        req = urllib.request.Request(
+            url,
+            headers={
+                "User-Agent": random.choice(USER_AGENTS),
+                "Accept": "text/html,application/xhtml+xml",
+                "Accept-Language": "en-US,en;q=0.9",
+            },
+        )
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            return resp.read().decode("utf-8", errors="ignore")
+
+    def _query_ddg_html(self, query: str) -> str:
+        data = urllib.parse.urlencode({"q": query}).encode("utf-8")
+        req = urllib.request.Request(
+            "https://html.duckduckgo.com/html/",
+            data=data,
+            method="POST",
+            headers={
+                "User-Agent": random.choice(USER_AGENTS),
+                "Accept": "text/html,application/xhtml+xml",
+                "Accept-Language": "en-US,en;q=0.9",
+                "Content-Type": "application/x-www-form-urlencoded",
+            },
+        )
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            return resp.read().decode("utf-8", errors="ignore")
+
+    # 各引擎响应中"被反爬"的特征关键词
+    _SE_ANTIBOT_MARKERS = (
+        "anomaly.js",              # DuckDuckGo
+        "/sorry/index",            # Google sorry page
+        "unusual traffic",         # Google
+        "turnstile-widget",        # Cloudflare Turnstile（Bing/Brave）
+        "captcha_header",          # Bing captcha 页结构
+        "challenge-form",          # 通用挑战页
+        "please verify you are a human",
+    )
+
+    def _discover_via_search_engine(self, keyword: str) -> dict | None:
+        """搜 'site:amazon.com {keyword} best sellers'，从结果 URL 里 grep
+        `/gp/bestsellers/<dept>/<NODE_ID>/...` 模式。
+
+        引擎链：Brave（最宽松）→ Bing → DuckDuckGo（兜底）
+        urllib 直接打，无需 Playwright，绕过 Amazon `/s?k=` 软反爬。
+        失败时 dump 响应前 800 字到日志，便于在 Action 端诊断。
+        """
+        queries = [
+            f"site:amazon.com {keyword} best sellers",
+            f"site:amazon.com {keyword} bestsellers",
+            f"amazon best sellers {keyword}",
+        ]
+        engines = [
+            ("Brave", self._query_brave_html),
+            ("Bing", self._query_bing_html),
+            ("DDG", self._query_ddg_html),
+        ]
+
+        for q in queries:
+            for engine_name, fetcher in engines:
+                try:
+                    print(f"[Discover/SE] {engine_name} : q={q!r}")
+                    html = fetcher(q)
+                    if not html or len(html) < 500:
+                        print(f"[Discover/SE]   {engine_name} 响应过短 ({len(html)} bytes)")
+                        continue
+
+                    low = html.lower()
+                    blocker = next((s for s in self._SE_ANTIBOT_MARKERS if s in low), None)
+                    if blocker:
+                        print(f"[Discover/SE]   {engine_name} 命中反爬特征 '{blocker}'，跳过")
+                        continue
+
+                    # 直接全文 grep（适用 Brave/Bing 直接给原 URL 的场景）
+                    hits = self._grep_bsr_hits(html)
+
+                    # DDG 把 URL 包在 uddg= 里，需先解码再 grep
+                    if not hits and "uddg=" in html:
+                        decoded = "\n".join(
+                            urllib.parse.unquote(m.group(1))
+                            for m in re.finditer(r"uddg=([^&\"]+)", html)
+                        )
+                        hits = self._grep_bsr_hits(decoded)
+
+                    print(f"[Discover/SE]   {engine_name} → 命中 BSR URL {len(hits)} 条 (html={len(html)}B)")
+                    for p, nid in hits[:5]:
+                        print(f"    - node_id={nid}  path={p}")
+
+                    if hits:
+                        path, nid = hits[0]
+                        return {
+                            "bsr_url": f"https://www.amazon.com{path}",
+                            "bsr_node_id": nid,
+                            "bsr_node_path": "",
+                            "_se_engine": engine_name,
+                        }
+                    # 0 命中但响应正常 → 截一小段响应给日志，便于事后诊断
+                    title_m = re.search(r"<title[^>]*>(.*?)</title>", html, re.IGNORECASE | re.DOTALL)
+                    title = (title_m.group(1).strip() if title_m else "")[:120]
+                    body_strip = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", html))[:600]
+                    print(f"[Discover/SE]   {engine_name} 0 命中。title={title!r}")
+                    print(f"[Discover/SE]   body 前 600 字: {body_strip[:600]}")
+                except Exception as e:
+                    print(f"[Discover/SE]   {engine_name} 查询失败: {str(e)[:120]}")
+                    continue
+
+        return None
+
+    async def _enrich_bsr_path_from_static_page(self, bsr_url: str) -> str:
+        """进 BSR 静态榜单页读 title/breadcrumb，补全 bsr_node_path。
+        失败返回空串，不阻塞主流程（path 仅用于 catalog 元信息，不影响抓取）。
+        """
+        try:
+            await self.page.goto(bsr_url, wait_until="domcontentloaded", timeout=30000)
+            await self.sleep("bsr meta")
+            title = await self.page.title()
+            m = re.search(r"Best Sellers in\s+(.+?)\s*$", title or "", re.IGNORECASE)
+            if m:
+                return m.group(1).strip()[:200]
+            try:
+                breadcrumb = await self.page.evaluate(
+                    "() => { const el = document.querySelector('#zg_browseRoot, .zg_browseRoot, [data-cy=\"breadcrumb\"]'); return el ? (el.textContent || '').trim() : ''; }"
+                )
+                if breadcrumb:
+                    return re.sub(r"\s+", " ", breadcrumb)[:200]
+            except Exception:
+                pass
+        except Exception as e:
+            print(f"[Discover] enrich path 失败（不阻塞）: {e}")
+        return ""
+
     async def discover_bsr_node(self) -> dict:
         """从 search_keyword 出发，自动找出该品类在 Amazon 的 BSR 叶子节点。
 
-        流程：
-          1. 搜索关键词（amazon.com/s?k=...）
-          2. 从搜索结果取 Top1-4 非赞助商品的 ASIN
-          3. 逐个进入商品详情页（最多试 3 个）
-          4. 从 "Best Sellers Rank" 模块提取 BSR 链接，选最深一级（叶子品类）
-          5. 返回 {bsr_url, bsr_node_id, bsr_node_path}，同时回填到 self.cfg
+        双路径设计：
+          Path A: Amazon /s?k=xxx → 商品页 BSR 块（最准，但 Action IP 经常被软拦截）
+          Path B: 第三方搜索引擎（DDG HTML）→ 从 site:amazon.com 结果里 grep BSR URL
+                  （绕过 Amazon 自家反爬；命中后进 BSR 静态页补 path）
 
-        失败抛 RuntimeError，由 run() 统一兜底（不污染 catalog）。
+        任一路径成功即返回 + 回填 self.cfg。两路都失败抛 RuntimeError。
         """
         keyword = (self.cfg.get("search_keyword") or "").strip()
         if not keyword:
             raise RuntimeError("discover: 空 search_keyword")
 
+        path_a_err: Exception | None = None
+        try:
+            return await self._discover_via_amazon_search(keyword)
+        except Exception as e:
+            path_a_err = e
+            print(f"\n[Discover] ⚠️ Path A (Amazon 搜索) 失败: {e}")
+            print(f"[Discover] 🔄 切换 Path B (第三方搜索引擎绕过 Amazon 反爬)")
+
+        result_b = self._discover_via_search_engine(keyword)
+        if result_b and result_b.get("bsr_node_id"):
+            bsr_path = await self._enrich_bsr_path_from_static_page(result_b["bsr_url"])
+            self.cfg["bsr_url"] = result_b["bsr_url"]
+            self.cfg["bsr_node_id"] = result_b["bsr_node_id"]
+            self.cfg["bsr_node_path"] = bsr_path or result_b["bsr_node_path"]
+            print(
+                f"[Discover] ✅ Path B 命中 | node_id={result_b['bsr_node_id']} "
+                f"path={(bsr_path or '?')!r} url={result_b['bsr_url']}"
+            )
+            return {
+                "bsr_url": self.cfg["bsr_url"],
+                "bsr_node_id": self.cfg["bsr_node_id"],
+                "bsr_node_path": self.cfg["bsr_node_path"],
+            }
+
+        raise RuntimeError(
+            f"discover: Path A 和 Path B 均失败（Path A: {path_a_err}; Path B: 无 BSR URL 命中）"
+        )
+
+    async def _discover_via_amazon_search(self, keyword: str) -> dict:
+        """Path A：Amazon 自家搜索 → 取非赞助 ASIN → 进商品页提 BSR 块。
+        被反爬时立刻抛异常，让上层切到 Path B。
+        """
         # 带 ref=nb_sb_noss 模拟从首页搜索框跳转的引用来源，降低被识别为爬虫的概率
         search_url = f"{self.cfg['base_url']}/s?k={keyword.replace(' ', '+')}&ref=nb_sb_noss"
         print(f"\n[Discover] 🔍 搜索: {search_url}")
