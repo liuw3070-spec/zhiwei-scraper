@@ -43,9 +43,12 @@ jobs:
         env:
           CI: "true"
           SCRAPE_CATEGORY: ${{ github.event.inputs.category }}
+          # Action 上下文默认启用 BSR 节点自动发现（catalog 未注册品类时自动从 Amazon 搜索→提取→写回 catalog）。
+          # 本地默认关闭以防误抓，详见 amazon_bsr_scraper.py 中 --allow-discover 开关。
+          ALLOW_DISCOVER: "1"
         run: |
           cd scraper
-          ARGS=""
+          ARGS="--allow-discover"
           if [ -n "${{ github.event.inputs.category }}" ]; then
             ARGS="$ARGS --category \"${{ github.event.inputs.category }}\""
           fi

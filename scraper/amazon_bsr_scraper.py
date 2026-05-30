@@ -79,24 +79,153 @@ def resolve_category(name: str, catalog: dict) -> tuple[str | None, dict | None]
     return None, None
 
 
+def infer_search_keyword(category: str) -> str:
+    """从英文 Title Case category 推断 Amazon 搜索关键词。
+      "Smart Watch"          → "smart watch"
+      "Pet Water Fountain"   → "pet water fountain"
+    输入若全为中文（用户输入污染场景），原样返回；
+    Amazon US 站对中文关键词响应弱，会触发"无搜索结果"异常，由调用方处理。
+    """
+    return (category or "").strip().lower()
+
+
+def append_to_catalog(category: str, info: dict, extra_aliases: list | None = None) -> bool:
+    """把动态发现/更新的品类条目写回 category_catalog.json。
+
+    并发安全：先写 .tmp 再 os.replace（原子操作，跨平台）；
+    Action self-healing commit 流程会处理 git push 时的冲突。
+    """
+    try:
+        catalog_data = {}
+        if CATALOG_PATH.exists():
+            catalog_data = json.loads(CATALOG_PATH.read_text(encoding="utf-8"))
+        catalog_data.setdefault(
+            "_doc",
+            "Category catalog · 品类目录。新增品类时在此追加。"
+            "键名建议用 Amazon 主流叫法的 Title Case。"
+            "'aliases' 列出中文/同义词，N2D 会做归一化匹配。",
+        )
+        cats = catalog_data.setdefault("categories", {})
+
+        existing_key, existing_info = resolve_category(category, cats)
+        target_key = existing_key or category.strip()
+
+        merged = dict(existing_info or {})
+        merged.update({k: v for k, v in info.items() if v is not None})
+
+        old_aliases = list(merged.get("aliases") or [])
+        new_aliases = list(extra_aliases or [])
+        merged["aliases"] = sorted(
+            {
+                a.strip()
+                for a in (old_aliases + new_aliases)
+                if a and a.strip().lower() != target_key.lower()
+            }
+        )
+
+        cats[target_key] = merged
+        catalog_data["_updated_at"] = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+
+        tmp = CATALOG_PATH.with_suffix(".json.tmp")
+        tmp.write_text(
+            json.dumps(catalog_data, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+        os.replace(tmp, CATALOG_PATH)
+        action = "更新" if existing_key else "新增"
+        print(
+            f"[Catalog] ✏️ {action}品类条目: '{target_key}' "
+            f"(bsr_node_id={merged.get('bsr_node_id', '?')})",
+            file=sys.stderr,
+        )
+        return True
+    except Exception as e:
+        print(f"[Catalog] ⚠️ 写回失败: {e}", file=sys.stderr)
+        return False
+
+
 def build_config(args) -> dict:
-    """根据命令行参数 + catalog 构建最终 CONFIG。"""
+    """根据命令行参数 + catalog 构建最终 CONFIG。
+
+    决策表（严格化，禁止悄悄 fallback 到默认品类）：
+
+      | 用户显式 --category | catalog 命中     | --allow-discover | 行为                                |
+      |---------------------|------------------|------------------|-------------------------------------|
+      | 否（定时任务）      | —                | —                | 沿用 DEFAULT_CONFIG（定时任务用）  |
+      | 是                  | 是 + bsr_url OK  | —                | 直接抓                              |
+      | 是                  | 是 + TODO_REPLACE| 否               | sys.exit(2) 报错                    |
+      | 是                  | 是 + TODO_REPLACE| 是               | 进入动态发现（discover + 回填 catalog） |
+      | 是                  | 否（catalog miss）| 否              | sys.exit(4) 报错，绝不抓 Pet Water Fountain |
+      | 是                  | 否（catalog miss）| 是              | 进入动态发现（discover + 写入 catalog） |
+    """
     cfg = dict(DEFAULT_CONFIG)
     catalog = load_catalog()
-    requested = args.category or os.getenv("SCRAPE_CATEGORY", "").strip() or cfg["category"]
+    cli_requested = (args.category or os.getenv("SCRAPE_CATEGORY", "")).strip()
+    requested = cli_requested or cfg["category"]
 
     key, info = resolve_category(requested, catalog)
+
     if not info:
-        print(f"[Catalog] 未找到品类 '{requested}'，使用 DEFAULT_CONFIG", file=sys.stderr)
+        if not cli_requested:
+            print(
+                f"[Catalog] 未找到默认品类 '{requested}'，沿用 DEFAULT_CONFIG（仅用于定时任务）",
+                file=sys.stderr,
+            )
+            return cfg
+        known = sorted(catalog.keys())
+        if not args.allow_discover:
+            print(
+                f"[Catalog] ❌ 显式指定的品类 '{cli_requested}' 不在 catalog 中。\n"
+                f"           已注册品类：{known or '(空)'}\n"
+                f"           ① 已知品类 → 加入 category_catalog.json 后重试\n"
+                f"           ② 新品类 → 加 --allow-discover（或 env ALLOW_DISCOVER=1）\n"
+                f"              脚本会自动从 Amazon 搜索→产品页提取 BSR 节点并写回 catalog\n"
+                f"           为避免静默回退到 DEFAULT_CONFIG（Pet Water Fountain），本次中止。",
+                file=sys.stderr,
+            )
+            sys.exit(4)
+        cfg["category"] = cli_requested.strip()
+        cfg["search_keyword"] = infer_search_keyword(cli_requested)
+        cfg["market"] = "amazon.com"
+        cfg["bsr_url"] = ""
+        cfg["bsr_node_id"] = ""
+        cfg["bsr_node_path"] = ""
+        cfg["_discover_mode"] = True
+        cfg["_discover_existing_aliases"] = []
+        if args.max_products:
+            cfg["max_products"] = args.max_products
+        print(
+            f"[Catalog] 🔍 catalog miss + --allow-discover 启用 → 进入动态发现模式\n"
+            f"           category='{cfg['category']}' search_keyword='{cfg['search_keyword']}'",
+            file=sys.stderr,
+        )
         return cfg
 
-    if "TODO_REPLACE" in str(info.get("bsr_url", "")) or "TODO_REPLACE" in str(info.get("bsr_node_id", "")):
+    bsr_unset = "TODO_REPLACE" in str(info.get("bsr_url", "")) or "TODO_REPLACE" in str(info.get("bsr_node_id", ""))
+    if bsr_unset:
+        if not args.allow_discover:
+            print(
+                f"[Catalog] 品类 '{key}' 的 BSR 节点尚未填充（still TODO_REPLACE）。\n"
+                f"           请在 category_catalog.json 替换为真实值，"
+                f"或加 --allow-discover 让脚本自动发现并回填。",
+                file=sys.stderr,
+            )
+            sys.exit(2)
+        cfg["category"] = key
+        cfg["search_keyword"] = info.get("search_keyword") or infer_search_keyword(key)
+        cfg["market"] = info.get("market", cfg["market"])
+        cfg["bsr_url"] = ""
+        cfg["bsr_node_id"] = ""
+        cfg["bsr_node_path"] = ""
+        cfg["_discover_mode"] = True
+        cfg["_discover_existing_aliases"] = list(info.get("aliases") or [])
+        if args.max_products:
+            cfg["max_products"] = args.max_products
         print(
-            f"[Catalog] 品类 '{key}' 的 BSR 节点尚未填充（still TODO_REPLACE）。"
-            f"\n请先在 category_catalog.json 里把 bsr_url 与 bsr_node_id 替换为真实值。",
-            file=sys.stderr
+            f"[Catalog] 🔍 品类 '{key}' 标记为 TODO + --allow-discover 启用 → 进入动态发现模式",
+            file=sys.stderr,
         )
-        sys.exit(2)
+        return cfg
 
     cfg["category"] = key
     cfg["search_keyword"] = info.get("search_keyword", cfg["search_keyword"])
@@ -104,6 +233,7 @@ def build_config(args) -> dict:
     cfg["bsr_url"] = info["bsr_url"]
     cfg["bsr_node_id"] = info["bsr_node_id"]
     cfg["bsr_node_path"] = info.get("bsr_node_path", "")
+    cfg["_discover_mode"] = False
 
     if args.max_products:
         cfg["max_products"] = args.max_products
@@ -117,6 +247,16 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--category", "-c", default="",
                         help="目标品类名（任意大小写/中文/英文/别名，将自动归一化到 catalog 中的规范键）")
     parser.add_argument("--max-products", type=int, default=0, help="覆盖默认产品数")
+    parser.add_argument(
+        "--allow-discover",
+        action="store_true",
+        default=os.getenv("ALLOW_DISCOVER", "").strip().lower() in ("1", "true", "yes", "on"),
+        help=(
+            "catalog 找不到品类或为 TODO 时，自动从 Amazon 搜索发现 BSR 节点并写回 catalog。"
+            "本地默认关闭（防误抓），GitHub Action 工作流默认开启。"
+            "也可通过环境变量 ALLOW_DISCOVER=1 启用。"
+        ),
+    )
     return parser.parse_args(argv)
 
 
@@ -412,6 +552,171 @@ class AmazonScraper:
             print(f"  [wait] {label}: {s:.1f}s")
         await asyncio.sleep(s)
 
+    # ---- Step 0: BSR 节点自动发现（catalog 未注册品类用）----
+
+    async def discover_bsr_node(self) -> dict:
+        """从 search_keyword 出发，自动找出该品类在 Amazon 的 BSR 叶子节点。
+
+        流程：
+          1. 搜索关键词（amazon.com/s?k=...）
+          2. 从搜索结果取 Top1-4 非赞助商品的 ASIN
+          3. 逐个进入商品详情页（最多试 3 个）
+          4. 从 "Best Sellers Rank" 模块提取 BSR 链接，选最深一级（叶子品类）
+          5. 返回 {bsr_url, bsr_node_id, bsr_node_path}，同时回填到 self.cfg
+
+        失败抛 RuntimeError，由 run() 统一兜底（不污染 catalog）。
+        """
+        keyword = (self.cfg.get("search_keyword") or "").strip()
+        if not keyword:
+            raise RuntimeError("discover: 空 search_keyword")
+
+        search_url = f"{self.cfg['base_url']}/s?k={keyword.replace(' ', '+')}"
+        print(f"\n[Discover] 🔍 搜索: {search_url}")
+        try:
+            await self.page.goto(search_url, wait_until="domcontentloaded", timeout=60000)
+        except Exception as e:
+            raise RuntimeError(f"discover: 搜索页加载失败 {e}")
+        await self.sleep("search page")
+
+        if await self.detect_block():
+            raise RuntimeError("discover: 搜索页被反爬拦截")
+
+        await self.human_like_scroll(total_steps=3)
+
+        cards = await self.page.query_selector_all(
+            "div[data-component-type='s-search-result']"
+        )
+        if not cards:
+            cards = await self.page.query_selector_all("div[data-asin][data-component-type]")
+        print(f"[Discover] 搜索结果原始候选: {len(cards)}")
+
+        candidate_asins: list[str] = []
+        for card in cards:
+            try:
+                sponsored = await card.query_selector("span:has-text('Sponsored')")
+                if sponsored:
+                    continue
+                asin = await card.get_attribute("data-asin") or ""
+                if asin and len(asin) == 10 and asin.startswith("B") and asin not in candidate_asins:
+                    candidate_asins.append(asin)
+                if len(candidate_asins) >= 5:
+                    break
+            except Exception:
+                continue
+
+        if not candidate_asins:
+            for card in cards[:8]:
+                try:
+                    asin = await card.get_attribute("data-asin") or ""
+                    if asin and len(asin) == 10 and asin.startswith("B") and asin not in candidate_asins:
+                        candidate_asins.append(asin)
+                except Exception:
+                    continue
+
+        if not candidate_asins:
+            raise RuntimeError(f"discover: 搜索 '{keyword}' 无可用 ASIN")
+
+        print(f"[Discover] 过滤后候选 ASIN: {candidate_asins[:5]}")
+
+        last_err = None
+        for asin in candidate_asins[:3]:
+            try:
+                info = await self._extract_bsr_from_product(asin)
+                if info and info.get("bsr_node_id"):
+                    self.cfg["bsr_url"] = info["bsr_url"]
+                    self.cfg["bsr_node_id"] = info["bsr_node_id"]
+                    self.cfg["bsr_node_path"] = info["bsr_node_path"]
+                    print(
+                        f"[Discover] ✅ 节点确认 | node_id={info['bsr_node_id']} "
+                        f"path='{info['bsr_node_path']}' url={info['bsr_url']}"
+                    )
+                    return info
+            except Exception as e:
+                last_err = e
+                print(f"[Discover] ASIN {asin} 提取失败: {e}，尝试下一个")
+            await asyncio.sleep(random.uniform(2.0, 4.0))
+
+        raise RuntimeError(f"discover: 3 个候选 ASIN 均未能提取 BSR 节点 (last_err={last_err})")
+
+    async def _extract_bsr_from_product(self, asin: str) -> dict | None:
+        """打开商品详情页，从 BSR 块取最深一级节点链接 + ID + 路径文本。
+
+        Amazon 详情页里 BSR 链接通常出现在：
+          - #detailBullets_feature_div 内的 li
+          - #productDetails_detailBullets_sections1 表格
+          - "Product information" 折叠区
+        我们用 JS 全页扫描 `a[href*='/gp/bestsellers/']`，挑路径最深的（叶子品类）。
+        """
+        url = f"{self.cfg['base_url']}/dp/{asin}/"
+        print(f"  [extract] {url}")
+        try:
+            await self.page.goto(url, wait_until="domcontentloaded", timeout=30000)
+        except Exception as e:
+            print(f"  [extract] 加载失败: {e}")
+            return None
+        await self.sleep(f"product {asin}")
+        if await self.detect_block():
+            print(f"  [extract] {asin} 被反爬拦截")
+            return None
+
+        await self.human_like_scroll(total_steps=4)
+        try:
+            await self.page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+        except Exception:
+            pass
+        await asyncio.sleep(random.uniform(1.0, 2.0))
+
+        bsr_links = await self.page.evaluate(
+            """
+            () => {
+                const anchors = Array.from(document.querySelectorAll(
+                    "a[href*='/gp/bestsellers/'], a[href*='/Best-Sellers-']"
+                ));
+                return anchors.map(a => {
+                    let host = a.closest('li, tr, span, p, div');
+                    return {
+                        href: a.getAttribute('href') || '',
+                        text: (a.textContent || '').trim(),
+                        host_text: host ? (host.textContent || '').trim().slice(0, 300) : ''
+                    };
+                }).filter(x => x.href);
+            }
+            """
+        )
+        if not bsr_links:
+            print(f"  [extract] 未找到 BSR 链接")
+            return None
+
+        def depth(href: str) -> int:
+            return len(href.strip("/").split("/"))
+
+        best = max(
+            enumerate(bsr_links),
+            key=lambda iv: (depth(iv[1]["href"]), iv[0]),
+        )[1]
+
+        href = best["href"]
+        if href.startswith("/"):
+            href = self.cfg["base_url"] + href
+
+        m = re.search(r"/bestsellers/[^/?#]+/(\d+)", href)
+        node_id = m.group(1) if m else ""
+        if not node_id:
+            print(f"  [extract] href 中未解析出 node_id: {href}")
+            return None
+
+        host_text = best.get("host_text", "")
+        path_m = re.search(r"in\s+([^(\n]+?)(?:\s*\(|$)", host_text)
+        bsr_path = (path_m.group(1) if path_m else best.get("text", "")).strip()
+        bsr_path = re.sub(r"\s*[#＃]?\d[\d,]*\s*", "", bsr_path).strip()
+        bsr_path = re.sub(r"\s+", " ", bsr_path)[:200]
+
+        return {
+            "bsr_url": href.split("?")[0].split("#")[0],
+            "bsr_node_id": node_id,
+            "bsr_node_path": bsr_path,
+        }
+
     # ---- Step 1: BSR 榜单 ----
 
     async def validate_bsr_page(self) -> bool:
@@ -705,15 +1010,30 @@ class AmazonScraper:
     # ---- Main ----
 
     async def run(self):
-        """主流程: BSR → 评论 → 输出."""
+        """主流程: [Discover] → BSR → 评论 → 输出 → [回填 catalog]."""
         print("=" * 50)
         print(f"  知微Agent · Amazon BSR Scraper")
         print(f"  品类: {self.cfg['category']}  |  市场: {self.cfg['market']}")
+        if self.cfg.get("_discover_mode"):
+            print(f"  模式: 🔍 动态发现 (search_keyword='{self.cfg.get('search_keyword', '')}')")
         print("=" * 50)
 
         await self.setup()
 
         try:
+            # Step 0: 动态发现模式 → 先发现 BSR 节点
+            if self.cfg.get("_discover_mode") and not self.cfg.get("bsr_url"):
+                try:
+                    await self.discover_bsr_node()
+                except Exception as e:
+                    print(f"\n[FATAL] BSR 节点发现失败: {e}")
+                    print(
+                        "         未发现节点意味着 Amazon 搜索无结果或反爬命中，"
+                        "本次中止以避免污染 catalog。\n"
+                        "         可稍后重试，或人工在 category_catalog.json 填入 BSR 节点。"
+                    )
+                    return
+
             # Step 1: BSR 榜单
             products = await self.scrape_bsr_page()
             if not products:
@@ -734,6 +1054,21 @@ class AmazonScraper:
             # Step 3: 最终输出
             self.save_markdown(products)
             self.save_json(products)
+
+            # Step 4: 动态发现品类 → 写回 catalog（commit & push 由 Action 兜底）
+            if self.cfg.get("_discover_mode"):
+                append_to_catalog(
+                    self.cfg["category"],
+                    {
+                        "search_keyword": self.cfg.get("search_keyword", ""),
+                        "market": self.cfg.get("market", "amazon.com"),
+                        "bsr_url": self.cfg.get("bsr_url", ""),
+                        "bsr_node_id": self.cfg.get("bsr_node_id", ""),
+                        "bsr_node_path": self.cfg.get("bsr_node_path", ""),
+                    },
+                    extra_aliases=self.cfg.get("_discover_existing_aliases") or [],
+                )
+
             print("\n[DONE]")
 
         finally:
