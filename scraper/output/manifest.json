@@ -20,8 +20,20 @@
         "Pet_Water_Fountain_20260527_195656.md",
         "Pet_Water_Fountain_20260527_192528.md"
       ]
+    },
+    "Yoga Mat": {
+      "aliases": [],
+      "latest_file": "Yoga_Mat_20260530_181720.md",
+      "scraped_at": "2026-05-30T18:17:20Z",
+      "asin_count": 10,
+      "market": "amazon.com",
+      "bsr_node_id": "3422251",
+      "status": "ok",
+      "history_files": [
+        "Yoga_Mat_20260530_181720.md"
+      ]
     }
   },
-  "updated_at": "2026-05-30T17:59:07Z",
+  "updated_at": "2026-05-30T18:17:22Z",
   "freshness_days": 7
 }
