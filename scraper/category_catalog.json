@@ -37,6 +37,14 @@
         "颈椎按摩仪",
         "Neck Massage Device"
       ]
+    },
+    "Yoga Mat": {
+      "search_keyword": "yoga mat",
+      "market": "amazon.com",
+      "bsr_url": "https://www.amazon.com/gp/bestsellers/sporting-goods/1240801011",
+      "bsr_node_id": "1240801011",
+      "bsr_node_path": "Sports & Outdoors > Exercise & Fitness > Yoga > Yoga Mat Bags",
+      "aliases": []
     }
   }
 }
