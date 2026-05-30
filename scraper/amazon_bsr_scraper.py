@@ -554,6 +554,52 @@ class AmazonScraper:
 
     # ---- Step 0: BSR 节点自动发现（catalog 未注册品类用）----
 
+    async def _dump_discover_failure(self, tag: str) -> None:
+        """保存搜索/发现失败时的现场：截图 + HTML 片段 + title + body 摘要。
+        所有产物落到 output_dir，会被 Action self-healing commit 一起 push，
+        方便事后到仓库直接看（GitHub 上 .png 可直接渲染）。
+        """
+        try:
+            ts = datetime.now().strftime("%H%M%S")
+            shot_path = self.output_dir / f"discover_{tag}_{ts}.png"
+            try:
+                await self.page.screenshot(path=str(shot_path), full_page=False)
+                print(f"[Discover] 📸 现场截图: {shot_path.name}")
+            except Exception as e:
+                print(f"[Discover] 截图失败: {e}")
+
+            try:
+                title = await self.page.title()
+            except Exception:
+                title = "<title_unavailable>"
+            try:
+                url_now = self.page.url
+            except Exception:
+                url_now = "<url_unavailable>"
+            try:
+                body_snip = await self.page.evaluate(
+                    "() => (document.body && document.body.innerText || '').slice(0, 1500)"
+                )
+            except Exception:
+                body_snip = "<body_unavailable>"
+            try:
+                html_snip = await self.page.evaluate(
+                    "() => (document.documentElement && document.documentElement.outerHTML || '').slice(0, 5000)"
+                )
+            except Exception:
+                html_snip = ""
+
+            print(f"[Discover] 当前 URL  : {url_now}")
+            print(f"[Discover] 页面 title: {title!r}")
+            print(f"[Discover] body 前 1500 字 ↓\n{body_snip}\n[Discover] body 摘要结束")
+
+            if html_snip:
+                html_path = self.output_dir / f"discover_{tag}_{ts}.html"
+                html_path.write_text(html_snip, encoding="utf-8")
+                print(f"[Discover] 🧾 HTML 片段(前 5KB): {html_path.name}")
+        except Exception as e:
+            print(f"[Discover] dump 失败（不阻塞流程）: {e}")
+
     async def discover_bsr_node(self) -> dict:
         """从 search_keyword 出发，自动找出该品类在 Amazon 的 BSR 叶子节点。
 
@@ -570,7 +616,8 @@ class AmazonScraper:
         if not keyword:
             raise RuntimeError("discover: 空 search_keyword")
 
-        search_url = f"{self.cfg['base_url']}/s?k={keyword.replace(' ', '+')}"
+        # 带 ref=nb_sb_noss 模拟从首页搜索框跳转的引用来源，降低被识别为爬虫的概率
+        search_url = f"{self.cfg['base_url']}/s?k={keyword.replace(' ', '+')}&ref=nb_sb_noss"
         print(f"\n[Discover] 🔍 搜索: {search_url}")
         try:
             await self.page.goto(search_url, wait_until="domcontentloaded", timeout=60000)
@@ -578,17 +625,41 @@ class AmazonScraper:
             raise RuntimeError(f"discover: 搜索页加载失败 {e}")
         await self.sleep("search page")
 
+        # Amazon 搜索结果是动态注入的，等 networkidle（最多 6s）以确保 SSR/JS 全部完成
+        try:
+            await self.page.wait_for_load_state("networkidle", timeout=6000)
+        except Exception:
+            pass
+
         if await self.detect_block():
+            await self._dump_discover_failure("blocked_search")
             raise RuntimeError("discover: 搜索页被反爬拦截")
 
         await self.human_like_scroll(total_steps=3)
 
-        cards = await self.page.query_selector_all(
-            "div[data-component-type='s-search-result']"
-        )
-        if not cards:
-            cards = await self.page.query_selector_all("div[data-asin][data-component-type]")
-        print(f"[Discover] 搜索结果原始候选: {len(cards)}")
+        # 多选择器兜底：覆盖 Amazon 搜索页历年来的 DOM 变体
+        candidate_selectors = [
+            "div[data-component-type='s-search-result']",
+            "div[data-asin][data-component-type]",
+            "div.s-result-item[data-asin]",
+            "div[role='listitem'][data-asin]",
+            "div[data-cel-widget^='search_result_']",
+            "div[data-asin]:not([data-asin=''])",
+        ]
+        cards = []
+        sel_report: list[str] = []
+        for sel in candidate_selectors:
+            try:
+                elems = await self.page.query_selector_all(sel)
+                sel_report.append(f"{sel} → {len(elems)}")
+                if elems and not cards:
+                    cards = elems
+            except Exception as e:
+                sel_report.append(f"{sel} → err:{str(e)[:30]}")
+        print(f"[Discover] 选择器命中情况:")
+        for line in sel_report:
+            print(f"  - {line}")
+        print(f"[Discover] 选用首个非空候选集，共 {len(cards)} 张")
 
         candidate_asins: list[str] = []
         for card in cards:
@@ -614,6 +685,7 @@ class AmazonScraper:
                     continue
 
         if not candidate_asins:
+            await self._dump_discover_failure("no_asin")
             raise RuntimeError(f"discover: 搜索 '{keyword}' 无可用 ASIN")
 
         print(f"[Discover] 过滤后候选 ASIN: {candidate_asins[:5]}")
