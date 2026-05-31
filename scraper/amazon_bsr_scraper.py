@@ -1038,25 +1038,25 @@ class AmazonScraper:
         return parsed
 
     async def _discover_via_amazon_bsr_tree(self, keyword: str) -> dict | None:
-        """Path C：BFS 递归下钻 Amazon BSR 目录树，找包含 keyword 的叶子分类。
+        """Path C：优先队列 + BFS 下钻 Amazon BSR 目录树，找匹配 keyword 的叶子分类。
 
         完全绕开搜索引擎：只走 /Best-Sellers/zgbs/<dept>/ 这条已验证不被拦截的路径。
 
         策略：
           1. 关键词 → 候选部门（启发式种子库 DEPT_KEYWORD_SEEDS）
-          2. BFS 逐层下钻（最多 MAX_DEPTH=3 层，MAX_PAGES=25 页）
-          3. 每层解析侧边栏子分类，评分匹配
-          4. 有 partial match（score>0）→ 优先下钻该分支
-          5. 全 0 命中时按 depth 自适应展开宽度：
-             L0 全 0 → 展开全部子类（Amazon 侧边栏按字母排序，前 2 个完全可能漏到
-                       'Wearable Technology' 这种 W 字母位置的关键节点）
-             L1 全 0 → 展开前 3 个（已经在子部门里，预算更紧）
-             L2+ 全 0 → 不展开（已经太深，零分继续下钻收益太低）
+          2. **优先队列（min-heap on -score）**：高分父节点的子节点先展开，
+             把宝贵的 page budget 用在高价值分支上（解决 Wireless Earbuds 那次
+             命中 'Earbud Headphones' ★30 但预算耗尽没机会下钻其子节点的问题）
+          3. 每层解析侧边栏，评分匹配；score>0 → 优先；score=0 → 仅 L0 全广度兜底
+          4. L0 全 0 兜底以"低优先级 0 分"入队，绝不阻塞已找到的高分分支
+          5. 最多 MAX_DEPTH=3 层 / MAX_PAGES=30 页
 
-        时间预算：每页 ~3s → 总 worst-case 75s（25 页，会被早期 100 分命中终结）
+        时间预算：每页 ~3s → 总 worst-case 90s（30 页，会被早期 100 分命中终结）
         """
+        import heapq
+
         MAX_DEPTH = 3
-        MAX_PAGES = 25
+        MAX_PAGES = 30
 
         kw_clean = (keyword or "").strip()
         if not kw_clean:
@@ -1067,14 +1067,18 @@ class AmazonScraper:
         for n, s in candidate_depts:
             print(f"  - {n} (slug={s})")
 
-        # BFS queue: (url, depth, breadcrumb_path)
-        queue: list[tuple[str, int, str]] = []
+        # 优先队列元素: (priority, seq, url, depth, breadcrumb_path)
+        #   priority = -inherited_score  (heap 是 min-heap，负 score 让高分先出)
+        #   seq      = 入队顺序，priority 相同时按入队顺序消费（稳定 FIFO 行为）
+        queue: list[tuple[int, int, str, int, str]] = []
+        seq_counter = 0
         for dept_name, slug in candidate_depts:
-            queue.append((
+            heapq.heappush(queue, (
+                0, seq_counter,
                 f"https://www.amazon.com/Best-Sellers/zgbs/{slug}/",
-                0,
-                dept_name,
+                0, dept_name,
             ))
+            seq_counter += 1
 
         visited: set[str] = set()
         best: dict | None = None
@@ -1082,7 +1086,7 @@ class AmazonScraper:
         pages_loaded = 0
 
         while queue and pages_loaded < MAX_PAGES and best_score < 100:
-            url, depth, breadcrumb = queue.pop(0)
+            priority, _, url, depth, breadcrumb = heapq.heappop(queue)
             if depth > MAX_DEPTH or url in visited:
                 continue
             visited.add(url)
@@ -1139,49 +1143,53 @@ class AmazonScraper:
             if best_score >= 100:
                 break
 
-            # 决定下一层下钻哪些分支
+            # 决定下一层下钻哪些分支 + 给出优先级（影响 heap 出队顺序）
             #
-            # 关键洞察：单靠 score 排序会被"低分干扰项"误导。
-            # 例：keyword='smart watch' 在 L0 Electronics 会让 'Smart Home' 命中
-            # 30 分（含 'smart'），但真正目标 'Wearable Technology' score=0，
-            # 一旦 top-3 截断就漏掉。
+            # 优先级设计:
+            #   score>0 命中: priority = -score  (高分先出)
+            #   L0 宽度兜底 zero-score: priority = +1  (绝不阻塞已找到的高分分支)
+            #   L1 全 0 兜底 zero-score: priority = +2  (再次降级)
             #
-            # 因此 L0 一律执行"全广度兜底"：score>0 的优先入队，剩下的 score=0
-            # 也全部入队（顶层部门一般 ≤25 项可控；MAX_PAGES=25 兜得住）。
+            # 关键洞察 1（分数干扰）:
+            #   keyword='smart watch' 在 L0 Electronics 让 'Smart Home' 命中 30，
+            #   而真正目标 'Wearable Technology' score=0。靠纯 score 排序会漏，
+            #   所以 L0 不管有没有命中都全广度兜底（用低优先级入队不影响进度）。
+            #
+            # 关键洞察 2（高分分支深挖）:
+            #   keyword='wireless earbuds' 在 L1 Headphones 命中 'Earbud Headphones' ★30，
+            #   原 FIFO 队列会让其它 17 个 L1 部门先消费完，等扫到该分支的 L2 时
+            #   MAX_PAGES 已耗尽。优先队列让 -30 < 0 < +1 直接抢占。
             if depth < MAX_DEPTH:
-                next_to_drill: list[tuple[dict, str]] = []
+                enqueued: list[tuple[int, dict, str]] = []  # (priority, cat, path)
                 drilled_hrefs: set[str] = set()
 
                 if drill_candidates:
                     drill_candidates.sort(key=lambda x: -x[0])
-                    for _, cat, path in drill_candidates[:3]:
-                        next_to_drill.append((cat, path))
+                    for score_, cat, path in drill_candidates[:3]:
+                        enqueued.append((-score_, cat, path))
                         drilled_hrefs.add(cat["href"])
 
-                # 自适应宽度兜底：
-                #   L0：不管有没有 score>0 命中，剩余 zero-score 也全部入队
-                #       （Amazon 侧边栏字母排序，关键节点可能在末尾如 'W' Wearable Technology）
-                #   L1：仅当全 0 时展开前 3
-                #   L2+：不补
+                # 自适应宽度兜底（低优先级，不阻塞）
                 if depth == 0:
                     for cat in cats:
                         if cat["href"] not in drilled_hrefs:
-                            next_to_drill.append((cat, f"{breadcrumb} > {cat['name']}"))
+                            enqueued.append((1, cat, f"{breadcrumb} > {cat['name']}"))
                             drilled_hrefs.add(cat["href"])
                 elif depth == 1 and not drill_candidates:
                     for cat in cats[:3]:
                         if cat["href"] not in drilled_hrefs:
-                            next_to_drill.append((cat, f"{breadcrumb} > {cat['name']}"))
+                            enqueued.append((2, cat, f"{breadcrumb} > {cat['name']}"))
                             drilled_hrefs.add(cat["href"])
 
                 top_n = min(len(drill_candidates), 3)
-                if len(next_to_drill) > top_n:
+                if len(enqueued) > top_n:
                     print(
-                        f"[Discover/Tree]   ↪ 入队 {len(next_to_drill)} 个分支 "
-                        f"(score>0 top: {top_n}, 宽度兜底: {len(next_to_drill) - top_n})"
+                        f"[Discover/Tree]   ↪ 入队 {len(enqueued)} 个分支 "
+                        f"(score>0 top: {top_n}, 宽度兜底: {len(enqueued) - top_n})"
                     )
-                for cat, path in next_to_drill:
-                    queue.append((cat["href"], depth + 1, path))
+                for prio, cat, path in enqueued:
+                    heapq.heappush(queue, (prio, seq_counter, cat["href"], depth + 1, path))
+                    seq_counter += 1
 
         if not best or best_score < 30:
             print(f"[Discover/Tree] ❌ {pages_loaded} 页扫描完毕，未找到分数 ≥ 30 的分类（最佳 {best_score}）")
