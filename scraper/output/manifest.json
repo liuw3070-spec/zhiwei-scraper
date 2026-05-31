@@ -2,13 +2,14 @@
   "categories": {
     "Smart Watch": {
       "aliases": [],
-      "latest_file": "Smart_Watch_20260531_042310.md",
-      "scraped_at": "2026-05-31T04:23:10Z",
+      "latest_file": "Smart_Watch_20260531_051234.md",
+      "scraped_at": "2026-05-31T05:12:34Z",
       "asin_count": 10,
       "market": "amazon.com",
-      "bsr_node_id": "5393958011",
+      "bsr_node_id": "7939901011",
       "status": "ok",
       "history_files": [
+        "Smart_Watch_20260531_051234.md",
         "Smart_Watch_20260531_042310.md",
         "Smart_Watch_20260531_040138.md"
       ]
@@ -49,6 +50,6 @@
       ]
     }
   },
-  "updated_at": "2026-05-31T04:23:13Z",
+  "updated_at": "2026-05-31T05:12:37Z",
   "freshness_days": 7
 }
