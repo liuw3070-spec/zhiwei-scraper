@@ -45,14 +45,6 @@
       "bsr_node_id": "3422301",
       "bsr_node_path": "Sports & Outdoors > Exercise & Fitness > Yoga > Yoga Mats",
       "aliases": []
-    },
-    "Smart Watch": {
-      "search_keyword": "smart watch",
-      "market": "amazon.com",
-      "bsr_url": "https://www.amazon.com/gp/bestsellers/sporting-goods/5393958011",
-      "bsr_node_id": "5393958011",
-      "bsr_node_path": "",
-      "aliases": []
     }
   }
 }

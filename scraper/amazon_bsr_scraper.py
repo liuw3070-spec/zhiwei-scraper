@@ -1044,15 +1044,19 @@ class AmazonScraper:
 
         策略：
           1. 关键词 → 候选部门（启发式种子库 DEPT_KEYWORD_SEEDS）
-          2. BFS 逐层下钻（最多 MAX_DEPTH=3 层，MAX_PAGES=8 页）
+          2. BFS 逐层下钻（最多 MAX_DEPTH=3 层，MAX_PAGES=25 页）
           3. 每层解析侧边栏子分类，评分匹配
           4. 有 partial match（score>0）→ 优先下钻该分支
-          5. 全 0 命中 → 下钻该层前 2 个子分类（Amazon 按热度排，大概率覆盖主流品类）
+          5. 全 0 命中时按 depth 自适应展开宽度：
+             L0 全 0 → 展开全部子类（Amazon 侧边栏按字母排序，前 2 个完全可能漏到
+                       'Wearable Technology' 这种 W 字母位置的关键节点）
+             L1 全 0 → 展开前 3 个（已经在子部门里，预算更紧）
+             L2+ 全 0 → 不展开（已经太深，零分继续下钻收益太低）
 
-        时间预算：每页 2-3s → 总 16-24s（worst case 8 页）
+        时间预算：每页 ~3s → 总 worst-case 75s（25 页，会被早期 100 分命中终结）
         """
         MAX_DEPTH = 3
-        MAX_PAGES = 8
+        MAX_PAGES = 25
 
         kw_clean = (keyword or "").strip()
         if not kw_clean:
@@ -1136,15 +1140,48 @@ class AmazonScraper:
                 break
 
             # 决定下一层下钻哪些分支
+            #
+            # 关键洞察：单靠 score 排序会被"低分干扰项"误导。
+            # 例：keyword='smart watch' 在 L0 Electronics 会让 'Smart Home' 命中
+            # 30 分（含 'smart'），但真正目标 'Wearable Technology' score=0，
+            # 一旦 top-3 截断就漏掉。
+            #
+            # 因此 L0 一律执行"全广度兜底"：score>0 的优先入队，剩下的 score=0
+            # 也全部入队（顶层部门一般 ≤25 项可控；MAX_PAGES=25 兜得住）。
             if depth < MAX_DEPTH:
+                next_to_drill: list[tuple[dict, str]] = []
+                drilled_hrefs: set[str] = set()
+
                 if drill_candidates:
                     drill_candidates.sort(key=lambda x: -x[0])
-                    for _, cat, path in drill_candidates[:2]:
-                        queue.append((cat["href"], depth + 1, path))
-                else:
-                    # 全部 0 分：下钻前 2 个子类（Amazon 按热度排序，大概率覆盖主流品类）
-                    for cat in cats[:2]:
-                        queue.append((cat["href"], depth + 1, f"{breadcrumb} > {cat['name']}"))
+                    for _, cat, path in drill_candidates[:3]:
+                        next_to_drill.append((cat, path))
+                        drilled_hrefs.add(cat["href"])
+
+                # 自适应宽度兜底：
+                #   L0：不管有没有 score>0 命中，剩余 zero-score 也全部入队
+                #       （Amazon 侧边栏字母排序，关键节点可能在末尾如 'W' Wearable Technology）
+                #   L1：仅当全 0 时展开前 3
+                #   L2+：不补
+                if depth == 0:
+                    for cat in cats:
+                        if cat["href"] not in drilled_hrefs:
+                            next_to_drill.append((cat, f"{breadcrumb} > {cat['name']}"))
+                            drilled_hrefs.add(cat["href"])
+                elif depth == 1 and not drill_candidates:
+                    for cat in cats[:3]:
+                        if cat["href"] not in drilled_hrefs:
+                            next_to_drill.append((cat, f"{breadcrumb} > {cat['name']}"))
+                            drilled_hrefs.add(cat["href"])
+
+                top_n = min(len(drill_candidates), 3)
+                if len(next_to_drill) > top_n:
+                    print(
+                        f"[Discover/Tree]   ↪ 入队 {len(next_to_drill)} 个分支 "
+                        f"(score>0 top: {top_n}, 宽度兜底: {len(next_to_drill) - top_n})"
+                    )
+                for cat, path in next_to_drill:
+                    queue.append((cat["href"], depth + 1, path))
 
         if not best or best_score < 30:
             print(f"[Discover/Tree] ❌ {pages_loaded} 页扫描完毕，未找到分数 ≥ 30 的分类（最佳 {best_score}）")
@@ -1204,24 +1241,39 @@ class AmazonScraper:
         print(f"\n[Discover] ⚠️ Path C 目录树未匹配")
         print(f"[Discover] 🔄 切换 Path B (第三方搜索引擎，最后兜底)")
 
+        # Path B 加 path-score 校验：搜索引擎只能给一个 URL，命中的节点未必跟
+        # keyword 真匹配（实测 brave 给 'smart watch' 返回的是 'Activity & Fitness Trackers'）。
+        # 阈值同 Path A：50（兼容父节点 55）
+        MIN_PATH_SCORE_B = 50
         result_b = self._discover_via_search_engine(keyword)
         if result_b and result_b.get("bsr_node_id"):
             bsr_path = await self._enrich_bsr_path_from_static_page(result_b["bsr_url"])
-            self.cfg["bsr_url"] = result_b["bsr_url"]
-            self.cfg["bsr_node_id"] = result_b["bsr_node_id"]
-            self.cfg["bsr_node_path"] = bsr_path or result_b["bsr_node_path"]
+            final_path = bsr_path or result_b.get("bsr_node_path") or ""
+            path_score = self._score_category_name(keyword, final_path)
             print(
-                f"[Discover] ✅ Path B 命中 | node_id={result_b['bsr_node_id']} "
-                f"path={(bsr_path or '?')!r} url={result_b['bsr_url']}"
+                f"[Discover] Path B 拿到 node_id={result_b['bsr_node_id']} "
+                f"path={final_path!r} → keyword 匹配度 {path_score}"
             )
-            return {
-                "bsr_url": self.cfg["bsr_url"],
-                "bsr_node_id": self.cfg["bsr_node_id"],
-                "bsr_node_path": self.cfg["bsr_node_path"],
-            }
+            if path_score >= MIN_PATH_SCORE_B:
+                self.cfg["bsr_url"] = result_b["bsr_url"]
+                self.cfg["bsr_node_id"] = result_b["bsr_node_id"]
+                self.cfg["bsr_node_path"] = final_path
+                print(
+                    f"[Discover] ✅ Path B 命中 | node_id={result_b['bsr_node_id']} "
+                    f"path={final_path!r} url={result_b['bsr_url']}"
+                )
+                return {
+                    "bsr_url": self.cfg["bsr_url"],
+                    "bsr_node_id": self.cfg["bsr_node_id"],
+                    "bsr_node_path": self.cfg["bsr_node_path"],
+                }
+            print(
+                f"[Discover] ⚠️ Path B path-score {path_score} < {MIN_PATH_SCORE_B}，"
+                f"放弃此节点（避免污染 catalog）"
+            )
 
         raise RuntimeError(
-            f"discover: 三路全部失败（A: {path_a_err}; C: 目录树未匹配; B: 无 BSR URL 命中）"
+            f"discover: 三路全部失败（A: {path_a_err}; C: 目录树未匹配; B: 无匹配 BSR URL）"
         )
 
     async def _discover_via_amazon_search(self, keyword: str) -> dict:
