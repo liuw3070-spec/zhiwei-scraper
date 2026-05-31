@@ -53,6 +53,14 @@
       "bsr_node_id": "7939901011",
       "bsr_node_path": "Electronics > Wearable Technology > Smartwatches",
       "aliases": []
+    },
+    "Wireless Earbuds": {
+      "search_keyword": "wireless earbuds",
+      "market": "amazon.com",
+      "bsr_url": "https://www.amazon.com/gp/bestsellers/electronics/12097478011",
+      "bsr_node_id": "12097478011",
+      "bsr_node_path": "Electronics > Headphones > Earbud Headphones",
+      "aliases": []
     }
   }
 }

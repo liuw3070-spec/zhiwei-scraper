@@ -48,8 +48,20 @@
         "Yoga_Mat_20260530_184320.md",
         "Yoga_Mat_20260530_181720.md"
       ]
+    },
+    "Wireless Earbuds": {
+      "aliases": [],
+      "latest_file": "Wireless_Earbuds_20260531_052614.md",
+      "scraped_at": "2026-05-31T05:26:14Z",
+      "asin_count": 10,
+      "market": "amazon.com",
+      "bsr_node_id": "12097478011",
+      "status": "ok",
+      "history_files": [
+        "Wireless_Earbuds_20260531_052614.md"
+      ]
     }
   },
-  "updated_at": "2026-05-31T05:12:37Z",
+  "updated_at": "2026-05-31T05:26:17Z",
   "freshness_days": 7
 }
