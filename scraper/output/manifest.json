@@ -1,5 +1,17 @@
 {
   "categories": {
+    "Smart Watch": {
+      "aliases": [],
+      "latest_file": "Smart_Watch_20260531_040138.md",
+      "scraped_at": "2026-05-31T04:01:38Z",
+      "asin_count": 10,
+      "market": "amazon.com",
+      "bsr_node_id": "13447451",
+      "status": "ok",
+      "history_files": [
+        "Smart_Watch_20260531_040138.md"
+      ]
+    },
     "Pet Water Fountain": {
       "aliases": [
         "Pet Water Dispenser",
@@ -36,6 +48,6 @@
       ]
     }
   },
-  "updated_at": "2026-05-30T19:13:53Z",
+  "updated_at": "2026-05-31T04:01:41Z",
   "freshness_days": 7
 }
