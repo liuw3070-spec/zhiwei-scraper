@@ -890,46 +890,69 @@ class AmazonScraper:
 
     @staticmethod
     def _singularize(token: str) -> str:
-        """粗糙的复数→单数，仅用于匹配（不改写原文）：mats→mat、boxes→box、puppies→puppy。"""
+        """粗糙的复数→单数（仅用于匹配，不改写原文）：
+            ies → y                   (puppies → puppy, ladies → lady)
+            -sses/-xes/-zes → 去 es   (kisses → kiss, boxes → box)
+            -shes/-ches → 去 es       (brushes → brush, watches → watch, smartwatches → smartwatch)
+            其它 -s（非 -ss）→ 去 s   (mats → mat, noses → nose)
+
+        注意 -ses 规则只匹配 -sses（双 s），避免把 'noses'(单数 nose) 错切成 'nos'。
+        """
         if len(token) > 4 and token.endswith("ies"):
             return token[:-3] + "y"
-        if len(token) > 3 and token.endswith("es") and token[-3] in "sxz" + "ch"[0]:
+        if len(token) > 4 and token.endswith(("sses", "xes", "zes", "shes", "ches")):
             return token[:-2]
         if len(token) > 3 and token.endswith("s") and not token.endswith("ss"):
             return token[:-1]
         return token
 
+    @staticmethod
+    def _crunch(text: str) -> str:
+        """去除所有空格/连字符/标点，仅保留字母数字（小写），用于跨越合成词差异比对。
+        'smart watch' / 'Smartwatches' / 'smart-watch' / 'SmartWatch' → 全部归一为 'smartwatch'（单数化后）。
+        """
+        return re.sub(r"[^a-z0-9]+", "", (text or "").lower())
+
     def _score_category_name(self, keyword: str, name: str) -> int:
         """匹配评分（0-100）。优先级（高→低）：
-            完全等价（仅单复数差异）→ 100
-            关键词 ⊊ 分类（分类比 kw 更具体，如 'Yoga Mat Bags' vs 'yoga mat'）
-                → 100 - 15 × extra_token_count，下限 50
-            分类 ⊊ 关键词（分类是父节点更宽泛，如 'Yoga' vs 'yoga mat'）→ 55
-            token 部分重叠 → 0-80（按 recall × precision）
+            ① 合成词等价（crunch + 单数化后相同，如 'smart watch' ≡ 'Smartwatches'）→ 100
+            ② 完全等价（token 集合相同）→ 100
+            ③ 关键词 ⊊ 分类（分类比 kw 更具体）→ 100 - 15 × extra，下限 50
+            ④ 分类 ⊊ 关键词（分类是父节点）→ 55
+            ⑤ token 部分重叠 → 0-80（按 recall × precision）
 
-        关键约束：'Yoga Mats' (100) > 'Yoga Mat Bags' (85) > 'Yoga' (55) > 'Mats' (40)
+        关键约束：
+          'Yoga Mats' (100) > 'Yoga Mat Bags' (85) > 'Yoga' (55) > 'Mats' (40)
+          'Smartwatches' ≡ 'smart watch' (100)  ← 解决合成词陷阱
         """
         if not name:
             return 0
+
+        # ① 合成词等价检查（跨越分词差异）
+        kw_crunch = self._singularize(self._crunch(keyword))
+        name_crunch = self._singularize(self._crunch(name))
+        if kw_crunch and name_crunch and kw_crunch == name_crunch:
+            return 100
+
         kw_tokens = {self._singularize(t) for t in self._tokens(keyword)}
         name_tokens = {self._singularize(t) for t in self._tokens(name)}
         if not kw_tokens or not name_tokens:
             return 0
 
-        # 完全等价（单复数归一后 token 集合相同）
+        # ② 完全等价（token 集合相同）
         if kw_tokens == name_tokens:
             return 100
 
-        # 关键词 ⊊ 分类：分类比 kw 更具体（额外 token 越少越接近叶子）
+        # ③ 关键词 ⊊ 分类
         if kw_tokens.issubset(name_tokens):
             extra = len(name_tokens) - len(kw_tokens)
             return max(50, 100 - 15 * extra)
 
-        # 分类 ⊊ 关键词：父节点（更宽泛），中等分用作导航候选
+        # ④ 分类 ⊊ 关键词
         if name_tokens.issubset(kw_tokens):
             return 55
 
-        # 部分重叠
+        # ⑤ 部分重叠
         overlap = kw_tokens & name_tokens
         if not overlap:
             return 0
@@ -1279,11 +1302,30 @@ class AmazonScraper:
 
         print(f"[Discover] 过滤后候选 ASIN: {candidate_asins[:5]}")
 
+        # ASIN 候选会优先取前 3 个非赞助；每个商品页都要校验它的 BSR path
+        # 与 keyword 是否匹配（搜索结果可能混入搭配/广告商品，BSR 在不相关类目下）。
+        # 评分阈值 50：
+        #   100 = 完全等价 / 85 = kw⊊name extra=1 / 55 = 父节点 / 50 是安全下限
+        MIN_PATH_SCORE = 50
         last_err = None
+        best_info = None  # 保留最高分候选，全部 < 阈值时作为相对最优兜底
+        best_path_score = -1
+
         for asin in candidate_asins[:3]:
             try:
                 info = await self._extract_bsr_from_product(asin)
-                if info and info.get("bsr_node_id"):
+                if not info or not info.get("bsr_node_id"):
+                    print(f"[Discover] ASIN {asin}: 未提取到 BSR 节点")
+                    await asyncio.sleep(random.uniform(2.0, 4.0))
+                    continue
+
+                path_score = self._score_category_name(keyword, info.get("bsr_node_path") or "")
+                print(
+                    f"[Discover] ASIN {asin}: path='{info['bsr_node_path']}' "
+                    f"node_id={info['bsr_node_id']} → keyword 匹配度 {path_score}"
+                )
+
+                if path_score >= MIN_PATH_SCORE:
                     self.cfg["bsr_url"] = info["bsr_url"]
                     self.cfg["bsr_node_id"] = info["bsr_node_id"]
                     self.cfg["bsr_node_path"] = info["bsr_node_path"]
@@ -1292,21 +1334,36 @@ class AmazonScraper:
                         f"path='{info['bsr_node_path']}' url={info['bsr_url']}"
                     )
                     return info
+
+                if path_score > best_path_score:
+                    best_info, best_path_score = info, path_score
+                print(f"[Discover] 分数 < {MIN_PATH_SCORE}，尝试下一个 ASIN")
             except Exception as e:
                 last_err = e
-                print(f"[Discover] ASIN {asin} 提取失败: {e}，尝试下一个")
+                print(f"[Discover] ASIN {asin} 提取异常: {e}，尝试下一个")
             await asyncio.sleep(random.uniform(2.0, 4.0))
 
-        raise RuntimeError(f"discover: 3 个候选 ASIN 均未能提取 BSR 节点 (last_err={last_err})")
+        raise RuntimeError(
+            f"discover: Path A 候选 ASIN 的 BSR path 均与 keyword 不匹配 "
+            f"(最高分 {best_path_score} < {MIN_PATH_SCORE}, "
+            f"best path='{(best_info or {}).get('bsr_node_path', '')}', last_err={last_err})"
+        )
 
     async def _extract_bsr_from_product(self, asin: str) -> dict | None:
-        """打开商品详情页，从 BSR 块取最深一级节点链接 + ID + 路径文本。
+        """打开商品详情页，**精确锁定**自身 BSR 信息块（不是页面其他位置的徽章/推荐分类链接），
+        取叶子节点链接 + ID + 路径文本。
 
-        Amazon 详情页里 BSR 链接通常出现在：
-          - #detailBullets_feature_div 内的 li
-          - #productDetails_detailBullets_sections1 表格
-          - "Product information" 折叠区
-        我们用 JS 全页扫描 `a[href*='/gp/bestsellers/']`，挑路径最深的（叶子品类）。
+        Amazon 详情页 BSR 块固定格式：
+            Best Sellers Rank: #6,123 in Electronics (See Top 100 in Electronics)
+                               #45 in Smartwatches (See Top 100 in Smartwatches)
+        策略：
+          1. XPath 找含 "Best Sellers Rank" 文字的元素，向上找祖先容器
+          2. 在该容器内按 DOM 顺序收集所有 /gp/bestsellers/ 链接
+          3. Amazon 按"大类→叶子"排列，**最后一个**就是叶子
+          4. 同时校验 host_text 含 "in <Category>" 句式（排除徽章型链接）
+
+        ⚠️ 不再用"全页扫 + URL 深度排序"——所有 /gp/bestsellers/<dept>/<id> URL 段数一样，
+            排序无效；商品页"相关推荐分类"徽章的 URL 会被误选（如 'Best Seller' badge）。
         """
         url = f"{self.cfg['base_url']}/dp/{asin}/"
         print(f"  [extract] {url}")
@@ -1328,33 +1385,77 @@ class AmazonScraper:
         await asyncio.sleep(random.uniform(1.0, 2.0))
 
         bsr_links = await self.page.evaluate(
-            """
+            r"""
             () => {
-                const anchors = Array.from(document.querySelectorAll(
-                    "a[href*='/gp/bestsellers/'], a[href*='/Best-Sellers-']"
-                ));
-                return anchors.map(a => {
-                    let host = a.closest('li, tr, span, p, div');
-                    return {
-                        href: a.getAttribute('href') || '',
-                        text: (a.textContent || '').trim(),
-                        host_text: host ? (host.textContent || '').trim().slice(0, 300) : ''
-                    };
-                }).filter(x => x.href);
+                // ① XPath 找含 "Best Sellers Rank" 文本节点的元素，向上找 6 级祖先作为锁定容器
+                const xr = document.evaluate(
+                    "//*[contains(translate(text(), 'BSR', 'bsr'), 'best sellers rank')]",
+                    document, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null
+                );
+                const containers = new Set();
+                for (let i = 0; i < xr.snapshotLength; i++) {
+                    let p = xr.snapshotItem(i);
+                    for (let k = 0; k < 6 && p; k++) {
+                        containers.add(p);
+                        p = p.parentElement;
+                    }
+                }
+                // 兜底：常见的 BSR 块容器
+                ['#detailBullets_feature_div',
+                 '#productDetails_detailBullets_sections1',
+                 '#productDetails_db_sections',
+                 '#prodDetails'].forEach(sel => {
+                    document.querySelectorAll(sel).forEach(el => containers.add(el));
+                });
+                if (containers.size === 0) return { links: [], hint: 'no_container' };
+
+                // ② 在容器内按 DOM 顺序拿 /gp/bestsellers/ 链接
+                const seen = new Set();
+                const links = [];
+                containers.forEach(c => {
+                    const anchors = c.querySelectorAll(
+                        "a[href*='/gp/bestsellers/'], a[href*='/Best-Sellers-']"
+                    );
+                    anchors.forEach(a => {
+                        const href = a.getAttribute('href') || '';
+                        if (!href || seen.has(href)) return;
+                        seen.add(href);
+                        const host = a.closest('li, tr, span, p, div');
+                        const hostText = host ? (host.textContent || '').trim() : '';
+                        // ③ 校验 host_text 含 "#N in X" 句式，排除徽章/推荐型
+                        const isBsrEntry = /#[\d,]+\s+in\s+/i.test(hostText);
+                        links.push({
+                            href,
+                            text: (a.textContent || '').trim(),
+                            host_text: hostText.slice(0, 300),
+                            is_bsr_entry: isBsrEntry,
+                        });
+                    });
+                });
+                return { links, hint: 'ok' };
             }
             """
         )
-        if not bsr_links:
-            print(f"  [extract] 未找到 BSR 链接")
+
+        candidates = (bsr_links or {}).get("links", [])
+        hint = (bsr_links or {}).get("hint", "")
+        if not candidates:
+            print(f"  [extract] 未找到 BSR 链接 (hint={hint})")
             return None
 
-        def depth(href: str) -> int:
-            return len(href.strip("/").split("/"))
+        # 优先选"#X in Y"格式的真 BSR 入口；都没有再退到所有候选
+        primary = [c for c in candidates if c.get("is_bsr_entry")]
+        if not primary:
+            print(f"  [extract] ⚠️ {len(candidates)} 个 BSR 链接均不含 '#N in X' 格式，可能在徽章区")
+            primary = candidates
 
-        best = max(
-            enumerate(bsr_links),
-            key=lambda iv: (depth(iv[1]["href"]), iv[0]),
-        )[1]
+        # Amazon BSR 块按"大类→叶子"排列：取最后一个 = 叶子
+        # 同一个链接（如 "See Top 100 in X"）可能重复，"See Top 100" 也是入口，所以这里仍取最后一个非空
+        best = primary[-1]
+        for cand in reversed(primary):
+            if cand.get("href"):
+                best = cand
+                break
 
         href = best["href"]
         if href.startswith("/"):
@@ -1367,11 +1468,16 @@ class AmazonScraper:
             return None
 
         host_text = best.get("host_text", "")
-        path_m = re.search(r"in\s+([^(\n]+?)(?:\s*\(|$)", host_text)
-        bsr_path = (path_m.group(1) if path_m else best.get("text", "")).strip()
-        bsr_path = re.sub(r"\s*[#＃]?\d[\d,]*\s*", "", bsr_path).strip()
+        # 从 host_text 里抽 "#N in <Category Name>" 中的 <Category Name>（取最后一段）
+        # 因为 host_text 可能跨多行包含 "#X in DEPT ... #Y in LEAF"
+        path_matches = re.findall(r"#[\d,]+\s+in\s+([^(\n#]+?)(?:\s*\(|$|#)", host_text)
+        if path_matches:
+            bsr_path = path_matches[-1].strip()
+        else:
+            bsr_path = (best.get("text", "") or "").strip()
         bsr_path = re.sub(r"\s+", " ", bsr_path)[:200]
 
+        print(f"  [extract] 候选 {len(candidates)} 个 (含 '#N in X' 格式 {len(primary)} 个) → 选最后: '{bsr_path}'")
         return {
             "bsr_url": href.split("?")[0].split("#")[0],
             "bsr_node_id": node_id,
