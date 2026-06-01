@@ -35,6 +35,18 @@
         "Pet_Water_Fountain_20260527_195656.md"
       ]
     },
+    "Robot Vacuum": {
+      "aliases": [],
+      "latest_file": "Robot_Vacuum_20260601_160034.md",
+      "scraped_at": "2026-06-01T16:00:34Z",
+      "asin_count": 10,
+      "market": "amazon.com",
+      "bsr_node_id": "3743521",
+      "status": "ok",
+      "history_files": [
+        "Robot_Vacuum_20260601_160034.md"
+      ]
+    },
     "Yoga Mat": {
       "aliases": [],
       "latest_file": "Yoga_Mat_20260530_191352.md",
@@ -64,6 +76,6 @@
       ]
     }
   },
-  "updated_at": "2026-06-01T15:44:24Z",
+  "updated_at": "2026-06-01T16:00:36Z",
   "freshness_days": 7
 }
