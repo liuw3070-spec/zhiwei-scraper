@@ -981,9 +981,16 @@ class AmazonScraper:
             picks = [(n, slug_map[n]) for n in fallback_order if n in slug_map][:top_k]
         return picks
 
-    async def _scrape_bsr_sidebar(self, url: str) -> list[dict]:
+    async def _scrape_bsr_sidebar(
+        self, url: str, exclude_node_ids: set[str] | None = None
+    ) -> list[dict]:
         """打开任意 BSR 页 URL，从侧边栏抽取当前层级的子分类。
         返回 [{name, href, node_id, slug}, ...]。
+
+        过滤规则（防止伪分类污染 BFS）：
+          1. 纯数字 name（如 "1", "2"）= 分页器按钮，丢弃
+          2. href 中 node_id ∈ exclude_node_ids（当前页 + 已访问祖先）= 面包屑/自链
+          3. 同一 node_id 多次出现仅保留首个（不同 ref 后缀的同节点）
         """
         try:
             await self.page.goto(url, wait_until="domcontentloaded", timeout=30000)
@@ -1024,16 +1031,45 @@ class AmazonScraper:
             print(f"[Discover/Tree]   侧边栏解析异常: {e}")
             return []
 
+        # 当前 URL 自身的 node_id（避免把页面自身/祖先链接当成子节点）
+        self_node_id = ""
+        m_self = re.search(r"/zgbs/[a-z0-9\-]+/(\d+)", url)
+        if m_self:
+            self_node_id = m_self.group(1)
+
+        exclude = set(exclude_node_ids or set())
+        if self_node_id:
+            exclude.add(self_node_id)
+
         parsed: list[dict] = []
+        seen_nodes: set[str] = set()
         for c in cats or []:
-            m = re.search(r"/zgbs/([a-z0-9\-]+)/(\d+)", c.get("href", ""))
+            name = (c.get("name") or "").strip()
+            href = c.get("href") or ""
+
+            # ① 纯数字 name = 分页器按钮 "1" / "2" / ...
+            if re.fullmatch(r"\d+", name):
+                continue
+
+            m = re.search(r"/zgbs/([a-z0-9\-]+)/(\d+)", href)
             if not m:
                 continue
+            slug, node_id = m.group(1), m.group(2)
+
+            # ② 自身或祖先（面包屑回链）
+            if node_id in exclude:
+                continue
+
+            # ③ 同 node_id 去重（同节点的多个 ref 变体）
+            if node_id in seen_nodes:
+                continue
+            seen_nodes.add(node_id)
+
             parsed.append({
-                "name": c["name"],
-                "href": c["href"],
-                "node_id": m.group(2),
-                "slug": m.group(1),
+                "name": name,
+                "href": href,
+                "node_id": node_id,
+                "slug": slug,
             })
         return parsed
 
@@ -1081,29 +1117,43 @@ class AmazonScraper:
             seq_counter += 1
 
         visited: set[str] = set()
+        # 记录所有访问过的 node_id，传给 sidebar 解析器以剔除"面包屑回链"
+        # （Amazon 子页 sidebar 顶部会出现父级链接，URL ?ref= 后缀跟当前 visited 不一样
+        # 所以 URL 字符串去重不够，必须按 node_id 去重）
+        visited_node_ids: set[str] = set()
         best: dict | None = None
         best_score = 0
         pages_loaded = 0
+
+        def _name_includes(parent: str, name: str) -> bool:
+            """判断 name 是否已经包含 parent（避免 'Earbud Headphones' + 'Headphones' = 'Earbud Headphones Headphones'）"""
+            pl = (parent or "").lower().strip()
+            nl = (name or "").lower().strip()
+            if not pl or not nl:
+                return False
+            return pl == nl or pl in nl or nl in pl
 
         while queue and pages_loaded < MAX_PAGES and best_score < 100:
             priority, _, url, depth, breadcrumb = heapq.heappop(queue)
             if depth > MAX_DEPTH or url in visited:
                 continue
             visited.add(url)
+            m_self = re.search(r"/zgbs/[a-z0-9\-]+/(\d+)", url)
+            if m_self:
+                visited_node_ids.add(m_self.group(1))
 
-            cats = await self._scrape_bsr_sidebar(url)
+            cats = await self._scrape_bsr_sidebar(url, exclude_node_ids=visited_node_ids)
             pages_loaded += 1
-            # 去掉和已访问 URL 相同的条目（避免看到父级/自身链接）
-            cats = [c for c in cats if c["href"] not in visited]
 
             # Amazon BSR 侧边栏在子目录下显示【相对父节点的简称】
             # 例如在 "Yoga" 下的 "Yoga Mats" 显示为 "Mats"。
             # 评分时同时尝试 raw name 和 "父节点名 + name" 的拼接，取最高分。
+            # 但仅当 name 不包含 parent 时才拼，避免 'Earbud Headphones Headphones' 这种重复。
             parent_last = breadcrumb.split(">")[-1].strip()
 
             def _score(name: str) -> int:
                 s1 = self._score_category_name(kw_clean, name)
-                if parent_last:
+                if parent_last and not _name_includes(parent_last, name):
                     qualified = f"{parent_last} {name}"
                     s2 = self._score_category_name(kw_clean, qualified)
                     return max(s1, s2)
@@ -1121,9 +1171,12 @@ class AmazonScraper:
             for cat in cats:
                 score = _score(cat["name"])
                 # path 使用拼接后的合格名，方便后续 catalog 元信息可读
+                # 同样守护：name 含 parent 时直接用 name，不拼接
                 display_name = cat["name"]
-                if parent_last and self._score_category_name(kw_clean, f"{parent_last} {cat['name']}") > \
-                        self._score_category_name(kw_clean, cat["name"]):
+                if (parent_last
+                        and not _name_includes(parent_last, cat["name"])
+                        and self._score_category_name(kw_clean, f"{parent_last} {cat['name']}") >
+                            self._score_category_name(kw_clean, cat["name"])):
                     display_name = f"{parent_last} {cat['name']}"
                 cat_path = f"{breadcrumb} > {display_name}"
                 if score > best_score:
