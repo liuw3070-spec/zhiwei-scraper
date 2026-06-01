@@ -37,13 +37,14 @@
     },
     "Robot Vacuum": {
       "aliases": [],
-      "latest_file": "Robot_Vacuum_20260601_160034.md",
-      "scraped_at": "2026-06-01T16:00:34Z",
+      "latest_file": "Robot_Vacuum_20260601_162821.md",
+      "scraped_at": "2026-06-01T16:28:21Z",
       "asin_count": 10,
       "market": "amazon.com",
-      "bsr_node_id": "3743521",
+      "bsr_node_id": "3743561",
       "status": "ok",
       "history_files": [
+        "Robot_Vacuum_20260601_162821.md",
         "Robot_Vacuum_20260601_160034.md"
       ]
     },
@@ -76,6 +77,6 @@
       ]
     }
   },
-  "updated_at": "2026-06-01T16:00:36Z",
+  "updated_at": "2026-06-01T16:28:24Z",
   "freshness_days": 7
 }
