@@ -913,17 +913,66 @@ class AmazonScraper:
         """
         return re.sub(r"[^a-z0-9]+", "", (text or "").lower())
 
+    @staticmethod
+    def _tokens_match(t1: str, t2: str) -> bool:
+        """两个 token 是否视为同义（精确相等 或 同根词变体）。
+
+        触发条件（任一）：
+          - 精确相等
+          - 较长一方是较短一方的 prefix，且
+              * 较短一方 ≥ 4 字符（防 'mat'~'matter' / 'fan'~'fanatic' 误伤）
+              * 长度差 ≤ 3 字符（典型形容词后缀 -ic/-al/-ed/-ing/-er）
+
+        正例：
+          robot ~ robotic    (5/7, diff 2)  ← Robot Vacuum 这次踩到的坑
+          cook ~ cooking     (4/7, diff 3)
+          slim ~ slimming    (4/8, diff 4) → False（diff 4 > 3）
+          slim ~ slimmer     (4/7, diff 3)
+        反例（避免误伤）：
+          mat ~ matter       (短 3 < 4, False)
+          fan ~ fanatic      (短 3 < 4, False)
+          tea ~ team         (短 3 < 4, False)
+        """
+        if not t1 or not t2:
+            return False
+        if t1 == t2:
+            return True
+        shorter, longer = (t1, t2) if len(t1) <= len(t2) else (t2, t1)
+        if len(shorter) < 4:
+            return False
+        if len(longer) - len(shorter) > 3:
+            return False
+        return longer.startswith(shorter)
+
+    @classmethod
+    def _fuzzy_subset(cls, a: set[str], b: set[str]) -> bool:
+        """a 中每个 token 都能在 b 找到（精确或模糊）匹配。"""
+        for ta in a:
+            if not any(cls._tokens_match(ta, tb) for tb in b):
+                return False
+        return True
+
+    @classmethod
+    def _fuzzy_overlap(cls, a: set[str], b: set[str]) -> set[str]:
+        """a 中能在 b 找到（精确或模糊）匹配的 token 集合。"""
+        return {ta for ta in a if any(cls._tokens_match(ta, tb) for tb in b)}
+
     def _score_category_name(self, keyword: str, name: str) -> int:
         """匹配评分（0-100）。优先级（高→低）：
             ① 合成词等价（crunch + 单数化后相同，如 'smart watch' ≡ 'Smartwatches'）→ 100
-            ② 完全等价（token 集合相同）→ 100
+            ② 完全等价（token 集合相同，含同根词模糊匹配，如 'robot vacuum' ≡ 'Robotic Vacuums'）→ 100
             ③ 关键词 ⊊ 分类（分类比 kw 更具体）→ 100 - 15 × extra，下限 50
             ④ 分类 ⊊ 关键词（分类是父节点）→ 55
             ⑤ token 部分重叠 → 0-80（按 recall × precision）
 
-        关键约束：
-          'Yoga Mats' (100) > 'Yoga Mat Bags' (85) > 'Yoga' (55) > 'Mats' (40)
-          'Smartwatches' ≡ 'smart watch' (100)  ← 解决合成词陷阱
+        ④ 与 ② 的优先级博弈（Robot Vacuum 踩过的坑）：
+          原本 'Vacuums' (父，55) > 'Robotic Vacuums' (叶子，30) 导致 BFS 选父节点。
+          引入 _tokens_match 后 'Robotic Vacuums' 升至 100，正确碾压父节点。
+
+        关键约束（含回归）：
+          'Yoga Mats' (100) > 'Yoga Mat Bags' (85) > 'Yoga' (55) > 'Mats' (55)
+          'Smartwatches' ≡ 'smart watch' (100)
+          'Robotic Vacuums' ≡ 'robot vacuum' (100)  ← 本次新增
         """
         if not name:
             return 0
@@ -939,25 +988,32 @@ class AmazonScraper:
         if not kw_tokens or not name_tokens:
             return 0
 
-        # ② 完全等价（token 集合相同）
-        if kw_tokens == name_tokens:
+        # 用 fuzzy 集合关系（含同根词模糊匹配）替代精确比较
+        kw_in_name = self._fuzzy_subset(kw_tokens, name_tokens)
+        name_in_kw = self._fuzzy_subset(name_tokens, kw_tokens)
+
+        # ② 完全等价（双向模糊子集）
+        if kw_in_name and name_in_kw:
             return 100
 
-        # ③ 关键词 ⊊ 分类
-        if kw_tokens.issubset(name_tokens):
-            extra = len(name_tokens) - len(kw_tokens)
+        # ③ 关键词 ⊊ 分类（分类比 kw 更具体）
+        if kw_in_name:
+            extra = max(0, len(name_tokens) - len(kw_tokens))
             return max(50, 100 - 15 * extra)
 
-        # ④ 分类 ⊊ 关键词
-        if name_tokens.issubset(kw_tokens):
+        # ④ 分类 ⊊ 关键词（父节点）
+        if name_in_kw:
             return 55
 
-        # ⑤ 部分重叠
-        overlap = kw_tokens & name_tokens
-        if not overlap:
+        # ⑤ 部分重叠（双向都不是子集）—— 用模糊 overlap 取大边
+        overlap_kw = self._fuzzy_overlap(kw_tokens, name_tokens)
+        overlap_name = self._fuzzy_overlap(name_tokens, kw_tokens)
+        # 取两边 overlap 数量的较大值（防止单边漏算）
+        overlap_cnt = max(len(overlap_kw), len(overlap_name))
+        if overlap_cnt == 0:
             return 0
-        recall = len(overlap) / len(kw_tokens)
-        precision = len(overlap) / len(name_tokens)
+        recall = overlap_cnt / len(kw_tokens)
+        precision = overlap_cnt / len(name_tokens)
         return int(80 * recall * (0.5 + 0.5 * precision))
 
     def _pick_candidate_depts(self, keyword: str, top_k: int = 3) -> list[tuple[str, str]]:

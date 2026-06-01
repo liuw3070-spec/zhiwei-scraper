@@ -61,14 +61,6 @@
       "bsr_node_id": "12097478011",
       "bsr_node_path": "Electronics > Headphones > Earbud Headphones",
       "aliases": []
-    },
-    "Robot Vacuum": {
-      "search_keyword": "robot vacuum",
-      "market": "amazon.com",
-      "bsr_url": "https://www.amazon.com/gp/bestsellers/home-garden/3743521",
-      "bsr_node_id": "3743521",
-      "bsr_node_path": "Home & Kitchen > Vacuums & Floor Care > Vacuums",
-      "aliases": []
     }
   }
 }
