@@ -1,6 +1,6 @@
 {
   "_doc": "Category catalog · 品类目录。新增品类时在此追加。键名建议用 Amazon 主流叫法的 Title Case。'aliases' 列出中文/同义词，N2D 会做归一化匹配。",
-  "_updated_at": "2026-05-31",
+  "_updated_at": "2026-06-01",
   "categories": {
     "Pet Water Fountain": {
       "search_keyword": "pet water fountain",
@@ -52,6 +52,14 @@
       "bsr_url": "https://www.amazon.com/gp/bestsellers/electronics/7939901011",
       "bsr_node_id": "7939901011",
       "bsr_node_path": "Electronics > Wearable Technology > Smartwatches",
+      "aliases": []
+    },
+    "Wireless Earbuds": {
+      "search_keyword": "wireless earbuds",
+      "market": "amazon.com",
+      "bsr_url": "https://www.amazon.com/gp/bestsellers/electronics/12097478011",
+      "bsr_node_id": "12097478011",
+      "bsr_node_path": "Electronics > Headphones > Earbud Headphones",
       "aliases": []
     }
   }

@@ -51,18 +51,19 @@
     },
     "Wireless Earbuds": {
       "aliases": [],
-      "latest_file": "Wireless_Earbuds_20260531_054752.md",
-      "scraped_at": "2026-05-31T05:47:52Z",
+      "latest_file": "Wireless_Earbuds_20260601_154420.md",
+      "scraped_at": "2026-06-01T15:44:20Z",
       "asin_count": 10,
       "market": "amazon.com",
       "bsr_node_id": "12097478011",
       "status": "ok",
       "history_files": [
+        "Wireless_Earbuds_20260601_154420.md",
         "Wireless_Earbuds_20260531_054752.md",
         "Wireless_Earbuds_20260531_052614.md"
       ]
     }
   },
-  "updated_at": "2026-05-31T19:13:34Z",
+  "updated_at": "2026-06-01T15:44:24Z",
   "freshness_days": 7
 }
