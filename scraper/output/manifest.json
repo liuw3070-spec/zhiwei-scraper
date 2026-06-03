@@ -1,5 +1,26 @@
 {
   "categories": {
+    "Pet Water Fountain": {
+      "aliases": [
+        "Pet Water Dispenser",
+        "Cat Water Fountain",
+        "宠物饮水机",
+        "猫饮水机"
+      ],
+      "latest_file": "Pet_Water_Fountain_20260603_205650.md",
+      "scraped_at": "2026-06-03T20:56:50Z",
+      "asin_count": 10,
+      "market": "amazon.com",
+      "bsr_node_id": "2975263011",
+      "status": "ok",
+      "history_files": [
+        "Pet_Water_Fountain_20260603_205650.md",
+        "Pet_Water_Fountain_20260602_204507.md",
+        "Pet_Water_Fountain_20260601_213331.md",
+        "Pet_Water_Fountain_20260531_191331.md",
+        "Pet_Water_Fountain_20260529_201844.md"
+      ]
+    },
     "Smart Watch": {
       "aliases": [],
       "latest_file": "Smart_Watch_20260531_051234.md",
@@ -12,27 +33,6 @@
         "Smart_Watch_20260531_051234.md",
         "Smart_Watch_20260531_042310.md",
         "Smart_Watch_20260531_040138.md"
-      ]
-    },
-    "Pet Water Fountain": {
-      "aliases": [
-        "Pet Water Dispenser",
-        "Cat Water Fountain",
-        "宠物饮水机",
-        "猫饮水机"
-      ],
-      "latest_file": "Pet_Water_Fountain_20260602_204507.md",
-      "scraped_at": "2026-06-02T20:45:07Z",
-      "asin_count": 10,
-      "market": "amazon.com",
-      "bsr_node_id": "2975263011",
-      "status": "ok",
-      "history_files": [
-        "Pet_Water_Fountain_20260602_204507.md",
-        "Pet_Water_Fountain_20260601_213331.md",
-        "Pet_Water_Fountain_20260531_191331.md",
-        "Pet_Water_Fountain_20260529_201844.md",
-        "Pet_Water_Fountain_20260528_201324.md"
       ]
     },
     "Robot Vacuum": {
@@ -77,6 +77,6 @@
       ]
     }
   },
-  "updated_at": "2026-06-02T20:45:12Z",
+  "updated_at": "2026-06-03T20:56:54Z",
   "freshness_days": 7
 }
