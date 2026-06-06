@@ -7,18 +7,18 @@
         "宠物饮水机",
         "猫饮水机"
       ],
-      "latest_file": "Pet_Water_Fountain_20260605_193948.md",
-      "scraped_at": "2026-06-05T19:39:48Z",
+      "latest_file": "Pet_Water_Fountain_20260606_191352.md",
+      "scraped_at": "2026-06-06T19:13:52Z",
       "asin_count": 10,
       "market": "amazon.com",
       "bsr_node_id": "2975263011",
       "status": "ok",
       "history_files": [
+        "Pet_Water_Fountain_20260606_191352.md",
         "Pet_Water_Fountain_20260605_193948.md",
         "Pet_Water_Fountain_20260604_200341.md",
         "Pet_Water_Fountain_20260603_205650.md",
-        "Pet_Water_Fountain_20260602_204507.md",
-        "Pet_Water_Fountain_20260601_213331.md"
+        "Pet_Water_Fountain_20260602_204507.md"
       ]
     },
     "Smart Watch": {
@@ -77,6 +77,6 @@
       ]
     }
   },
-  "updated_at": "2026-06-05T19:39:50Z",
+  "updated_at": "2026-06-06T19:13:55Z",
   "freshness_days": 7
 }
