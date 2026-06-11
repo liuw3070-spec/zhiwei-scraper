@@ -1,5 +1,19 @@
 {
   "categories": {
+    "Yoga Mat": {
+      "aliases": [],
+      "latest_file": "Yoga_Mat_20260530_191352.md",
+      "scraped_at": "2026-05-30T19:13:52Z",
+      "asin_count": 10,
+      "market": "amazon.com",
+      "bsr_node_id": "3422301",
+      "status": "ok",
+      "history_files": [
+        "Yoga_Mat_20260530_191352.md",
+        "Yoga_Mat_20260530_184320.md",
+        "Yoga_Mat_20260530_181720.md"
+      ]
+    },
     "Pet Water Fountain": {
       "aliases": [
         "Pet Water Dispenser",
@@ -7,32 +21,18 @@
         "宠物饮水机",
         "猫饮水机"
       ],
-      "latest_file": "Pet_Water_Fountain_20260610_202137.md",
-      "scraped_at": "2026-06-10T20:21:37Z",
+      "latest_file": "Pet_Water_Fountain_20260611_201940.md",
+      "scraped_at": "2026-06-11T20:19:40Z",
       "asin_count": 10,
       "market": "amazon.com",
       "bsr_node_id": "2975263011",
       "status": "ok",
       "history_files": [
+        "Pet_Water_Fountain_20260611_201940.md",
         "Pet_Water_Fountain_20260610_202137.md",
         "Pet_Water_Fountain_20260609_200522.md",
         "Pet_Water_Fountain_20260608_200912.md",
-        "Pet_Water_Fountain_20260607_191428.md",
-        "Pet_Water_Fountain_20260606_191352.md"
-      ]
-    },
-    "Smart Watch": {
-      "aliases": [],
-      "latest_file": "Smart_Watch_20260531_051234.md",
-      "scraped_at": "2026-05-31T05:12:34Z",
-      "asin_count": 10,
-      "market": "amazon.com",
-      "bsr_node_id": "7939901011",
-      "status": "ok",
-      "history_files": [
-        "Smart_Watch_20260531_051234.md",
-        "Smart_Watch_20260531_042310.md",
-        "Smart_Watch_20260531_040138.md"
+        "Pet_Water_Fountain_20260607_191428.md"
       ]
     },
     "Robot Vacuum": {
@@ -48,18 +48,18 @@
         "Robot_Vacuum_20260601_160034.md"
       ]
     },
-    "Yoga Mat": {
+    "Smart Watch": {
       "aliases": [],
-      "latest_file": "Yoga_Mat_20260530_191352.md",
-      "scraped_at": "2026-05-30T19:13:52Z",
+      "latest_file": "Smart_Watch_20260531_051234.md",
+      "scraped_at": "2026-05-31T05:12:34Z",
       "asin_count": 10,
       "market": "amazon.com",
-      "bsr_node_id": "3422301",
+      "bsr_node_id": "7939901011",
       "status": "ok",
       "history_files": [
-        "Yoga_Mat_20260530_191352.md",
-        "Yoga_Mat_20260530_184320.md",
-        "Yoga_Mat_20260530_181720.md"
+        "Smart_Watch_20260531_051234.md",
+        "Smart_Watch_20260531_042310.md",
+        "Smart_Watch_20260531_040138.md"
       ]
     },
     "Wireless Earbuds": {
@@ -77,6 +77,6 @@
       ]
     }
   },
-  "updated_at": "2026-06-10T20:21:40Z",
+  "updated_at": "2026-06-11T20:19:43Z",
   "freshness_days": 7
 }
