@@ -1,5 +1,26 @@
 {
   "categories": {
+    "Pet Water Fountain": {
+      "aliases": [
+        "Pet Water Dispenser",
+        "Cat Water Fountain",
+        "宠物饮水机",
+        "猫饮水机"
+      ],
+      "latest_file": "Pet_Water_Fountain_20260711_190449.md",
+      "scraped_at": "2026-07-11T19:04:49Z",
+      "asin_count": 10,
+      "market": "amazon.com",
+      "bsr_node_id": "2975263011",
+      "status": "ok",
+      "history_files": [
+        "Pet_Water_Fountain_20260711_190449.md",
+        "Pet_Water_Fountain_20260710_193604.md",
+        "Pet_Water_Fountain_20260709_193945.md",
+        "Pet_Water_Fountain_20260708_192539.md",
+        "Pet_Water_Fountain_20260707_195326.md"
+      ]
+    },
     "Yoga Mat": {
       "aliases": [],
       "latest_file": "Yoga_Mat_20260530_191352.md",
@@ -12,27 +33,6 @@
         "Yoga_Mat_20260530_191352.md",
         "Yoga_Mat_20260530_184320.md",
         "Yoga_Mat_20260530_181720.md"
-      ]
-    },
-    "Pet Water Fountain": {
-      "aliases": [
-        "Pet Water Dispenser",
-        "Cat Water Fountain",
-        "宠物饮水机",
-        "猫饮水机"
-      ],
-      "latest_file": "Pet_Water_Fountain_20260710_193604.md",
-      "scraped_at": "2026-07-10T19:36:04Z",
-      "asin_count": 10,
-      "market": "amazon.com",
-      "bsr_node_id": "2975263011",
-      "status": "ok",
-      "history_files": [
-        "Pet_Water_Fountain_20260710_193604.md",
-        "Pet_Water_Fountain_20260709_193945.md",
-        "Pet_Water_Fountain_20260708_192539.md",
-        "Pet_Water_Fountain_20260707_195326.md",
-        "Pet_Water_Fountain_20260706_194618.md"
       ]
     },
     "Robot Vacuum": {
@@ -77,6 +77,6 @@
       ]
     }
   },
-  "updated_at": "2026-07-10T19:36:07Z",
+  "updated_at": "2026-07-11T19:04:52Z",
   "freshness_days": 7
 }
