@@ -7,18 +7,18 @@
         "宠物饮水机",
         "猫饮水机"
       ],
-      "latest_file": "Pet_Water_Fountain_20260714_191627.md",
-      "scraped_at": "2026-07-14T19:16:27Z",
+      "latest_file": "Pet_Water_Fountain_20260715_190929.md",
+      "scraped_at": "2026-07-15T19:09:29Z",
       "asin_count": 10,
       "market": "amazon.com",
       "bsr_node_id": "2975263011",
       "status": "ok",
       "history_files": [
+        "Pet_Water_Fountain_20260715_190929.md",
         "Pet_Water_Fountain_20260714_191627.md",
         "Pet_Water_Fountain_20260713_192637.md",
         "Pet_Water_Fountain_20260712_190317.md",
-        "Pet_Water_Fountain_20260711_190449.md",
-        "Pet_Water_Fountain_20260710_193604.md"
+        "Pet_Water_Fountain_20260711_190449.md"
       ]
     },
     "Yoga Mat": {
@@ -33,6 +33,20 @@
         "Yoga_Mat_20260530_191352.md",
         "Yoga_Mat_20260530_184320.md",
         "Yoga_Mat_20260530_181720.md"
+      ]
+    },
+    "Wireless Earbuds": {
+      "aliases": [],
+      "latest_file": "Wireless_Earbuds_20260601_154420.md",
+      "scraped_at": "2026-06-01T15:44:20Z",
+      "asin_count": 10,
+      "market": "amazon.com",
+      "bsr_node_id": "12097478011",
+      "status": "ok",
+      "history_files": [
+        "Wireless_Earbuds_20260601_154420.md",
+        "Wireless_Earbuds_20260531_054752.md",
+        "Wireless_Earbuds_20260531_052614.md"
       ]
     },
     "Robot Vacuum": {
@@ -61,22 +75,8 @@
         "Smart_Watch_20260531_042310.md",
         "Smart_Watch_20260531_040138.md"
       ]
-    },
-    "Wireless Earbuds": {
-      "aliases": [],
-      "latest_file": "Wireless_Earbuds_20260601_154420.md",
-      "scraped_at": "2026-06-01T15:44:20Z",
-      "asin_count": 10,
-      "market": "amazon.com",
-      "bsr_node_id": "12097478011",
-      "status": "ok",
-      "history_files": [
-        "Wireless_Earbuds_20260601_154420.md",
-        "Wireless_Earbuds_20260531_054752.md",
-        "Wireless_Earbuds_20260531_052614.md"
-      ]
     }
   },
-  "updated_at": "2026-07-14T19:16:30Z",
+  "updated_at": "2026-07-15T19:09:31Z",
   "freshness_days": 7
 }
