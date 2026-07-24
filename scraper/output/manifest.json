@@ -7,18 +7,32 @@
         "宠物饮水机",
         "猫饮水机"
       ],
-      "latest_file": "Pet_Water_Fountain_20260723_191925.md",
-      "scraped_at": "2026-07-23T19:19:25Z",
+      "latest_file": "Pet_Water_Fountain_20260724_193141.md",
+      "scraped_at": "2026-07-24T19:31:41Z",
       "asin_count": 10,
       "market": "amazon.com",
       "bsr_node_id": "2975263011",
       "status": "ok",
       "history_files": [
+        "Pet_Water_Fountain_20260724_193141.md",
         "Pet_Water_Fountain_20260723_191925.md",
         "Pet_Water_Fountain_20260722_191708.md",
         "Pet_Water_Fountain_20260721_192344.md",
-        "Pet_Water_Fountain_20260720_194438.md",
-        "Pet_Water_Fountain_20260719_190319.md"
+        "Pet_Water_Fountain_20260720_194438.md"
+      ]
+    },
+    "Smart Watch": {
+      "aliases": [],
+      "latest_file": "Smart_Watch_20260531_051234.md",
+      "scraped_at": "2026-05-31T05:12:34Z",
+      "asin_count": 10,
+      "market": "amazon.com",
+      "bsr_node_id": "7939901011",
+      "status": "ok",
+      "history_files": [
+        "Smart_Watch_20260531_051234.md",
+        "Smart_Watch_20260531_042310.md",
+        "Smart_Watch_20260531_040138.md"
       ]
     },
     "Yoga Mat": {
@@ -35,20 +49,6 @@
         "Yoga_Mat_20260530_181720.md"
       ]
     },
-    "Wireless Earbuds": {
-      "aliases": [],
-      "latest_file": "Wireless_Earbuds_20260601_154420.md",
-      "scraped_at": "2026-06-01T15:44:20Z",
-      "asin_count": 10,
-      "market": "amazon.com",
-      "bsr_node_id": "12097478011",
-      "status": "ok",
-      "history_files": [
-        "Wireless_Earbuds_20260601_154420.md",
-        "Wireless_Earbuds_20260531_054752.md",
-        "Wireless_Earbuds_20260531_052614.md"
-      ]
-    },
     "Robot Vacuum": {
       "aliases": [],
       "latest_file": "Robot_Vacuum_20260601_162821.md",
@@ -62,21 +62,21 @@
         "Robot_Vacuum_20260601_160034.md"
       ]
     },
-    "Smart Watch": {
+    "Wireless Earbuds": {
       "aliases": [],
-      "latest_file": "Smart_Watch_20260531_051234.md",
-      "scraped_at": "2026-05-31T05:12:34Z",
+      "latest_file": "Wireless_Earbuds_20260601_154420.md",
+      "scraped_at": "2026-06-01T15:44:20Z",
       "asin_count": 10,
       "market": "amazon.com",
-      "bsr_node_id": "7939901011",
+      "bsr_node_id": "12097478011",
       "status": "ok",
       "history_files": [
-        "Smart_Watch_20260531_051234.md",
-        "Smart_Watch_20260531_042310.md",
-        "Smart_Watch_20260531_040138.md"
+        "Wireless_Earbuds_20260601_154420.md",
+        "Wireless_Earbuds_20260531_054752.md",
+        "Wireless_Earbuds_20260531_052614.md"
       ]
     }
   },
-  "updated_at": "2026-07-23T19:19:29Z",
+  "updated_at": "2026-07-24T19:31:44Z",
   "freshness_days": 7
 }
