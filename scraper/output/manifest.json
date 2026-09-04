@@ -7,31 +7,32 @@
         "宠物饮水机",
         "猫饮水机"
       ],
-      "latest_file": "Pet_Water_Fountain_20260903_203620.md",
-      "scraped_at": "2026-09-03T20:36:20Z",
+      "latest_file": "Pet_Water_Fountain_20260904_202131.md",
+      "scraped_at": "2026-09-04T20:21:31Z",
       "asin_count": 10,
       "market": "amazon.com",
       "bsr_node_id": "2975263011",
       "status": "ok",
       "history_files": [
+        "Pet_Water_Fountain_20260904_202131.md",
         "Pet_Water_Fountain_20260903_203620.md",
         "Pet_Water_Fountain_20260902_203530.md",
         "Pet_Water_Fountain_20260901_203740.md",
-        "Pet_Water_Fountain_20260831_223005.md",
-        "Pet_Water_Fountain_20260830_203339.md"
+        "Pet_Water_Fountain_20260831_223005.md"
       ]
     },
-    "Robot Vacuum": {
+    "Yoga Mat": {
       "aliases": [],
-      "latest_file": "Robot_Vacuum_20260601_162821.md",
-      "scraped_at": "2026-06-01T16:28:21Z",
+      "latest_file": "Yoga_Mat_20260530_191352.md",
+      "scraped_at": "2026-05-30T19:13:52Z",
       "asin_count": 10,
       "market": "amazon.com",
-      "bsr_node_id": "3743561",
+      "bsr_node_id": "3422301",
       "status": "ok",
       "history_files": [
-        "Robot_Vacuum_20260601_162821.md",
-        "Robot_Vacuum_20260601_160034.md"
+        "Yoga_Mat_20260530_191352.md",
+        "Yoga_Mat_20260530_184320.md",
+        "Yoga_Mat_20260530_181720.md"
       ]
     },
     "Smart Watch": {
@@ -62,21 +63,20 @@
         "Wireless_Earbuds_20260531_052614.md"
       ]
     },
-    "Yoga Mat": {
+    "Robot Vacuum": {
       "aliases": [],
-      "latest_file": "Yoga_Mat_20260530_191352.md",
-      "scraped_at": "2026-05-30T19:13:52Z",
+      "latest_file": "Robot_Vacuum_20260601_162821.md",
+      "scraped_at": "2026-06-01T16:28:21Z",
       "asin_count": 10,
       "market": "amazon.com",
-      "bsr_node_id": "3422301",
+      "bsr_node_id": "3743561",
       "status": "ok",
       "history_files": [
-        "Yoga_Mat_20260530_191352.md",
-        "Yoga_Mat_20260530_184320.md",
-        "Yoga_Mat_20260530_181720.md"
+        "Robot_Vacuum_20260601_162821.md",
+        "Robot_Vacuum_20260601_160034.md"
       ]
     }
   },
-  "updated_at": "2026-09-03T20:36:23Z",
+  "updated_at": "2026-09-04T20:21:34Z",
   "freshness_days": 7
 }
