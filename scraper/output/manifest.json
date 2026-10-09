@@ -20,18 +20,18 @@
         "宠物饮水机",
         "猫饮水机"
       ],
-      "latest_file": "Pet_Water_Fountain_20261008_225612.md",
-      "scraped_at": "2026-10-08T22:56:12Z",
+      "latest_file": "Pet_Water_Fountain_20261009_221939.md",
+      "scraped_at": "2026-10-09T22:19:39Z",
       "asin_count": 10,
       "market": "amazon.com",
       "bsr_node_id": "2975263011",
       "status": "ok",
       "history_files": [
+        "Pet_Water_Fountain_20261009_221939.md",
         "Pet_Water_Fountain_20261008_225612.md",
         "Pet_Water_Fountain_20261007_224253.md",
         "Pet_Water_Fountain_20261006_222002.md",
-        "Pet_Water_Fountain_20261005_234255.md",
-        "Pet_Water_Fountain_20261004_205207.md"
+        "Pet_Water_Fountain_20261005_234255.md"
       ]
     },
     "Wireless Earbuds": {
@@ -77,6 +77,6 @@
       ]
     }
   },
-  "updated_at": "2026-10-08T22:56:14Z",
+  "updated_at": "2026-10-09T22:19:44Z",
   "freshness_days": 7
 }
