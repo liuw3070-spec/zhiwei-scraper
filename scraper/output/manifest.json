@@ -1,18 +1,5 @@
 {
   "categories": {
-    "Robot Vacuum": {
-      "aliases": [],
-      "latest_file": "Robot_Vacuum_20260601_162821.md",
-      "scraped_at": "2026-06-01T16:28:21Z",
-      "asin_count": 10,
-      "market": "amazon.com",
-      "bsr_node_id": "3743561",
-      "status": "ok",
-      "history_files": [
-        "Robot_Vacuum_20260601_162821.md",
-        "Robot_Vacuum_20260601_160034.md"
-      ]
-    },
     "Pet Water Fountain": {
       "aliases": [
         "Pet Water Dispenser",
@@ -20,32 +7,32 @@
         "宠物饮水机",
         "猫饮水机"
       ],
-      "latest_file": "Pet_Water_Fountain_20261027_215001.md",
-      "scraped_at": "2026-10-27T21:50:01Z",
+      "latest_file": "Pet_Water_Fountain_20261028_221506.md",
+      "scraped_at": "2026-10-28T22:15:06Z",
       "asin_count": 10,
       "market": "amazon.com",
       "bsr_node_id": "2975263011",
       "status": "ok",
       "history_files": [
+        "Pet_Water_Fountain_20261028_221506.md",
         "Pet_Water_Fountain_20261027_215001.md",
         "Pet_Water_Fountain_20261026_221738.md",
         "Pet_Water_Fountain_20261025_202817.md",
-        "Pet_Water_Fountain_20261024_201738.md",
-        "Pet_Water_Fountain_20261023_210139.md"
+        "Pet_Water_Fountain_20261024_201738.md"
       ]
     },
-    "Wireless Earbuds": {
+    "Smart Watch": {
       "aliases": [],
-      "latest_file": "Wireless_Earbuds_20260601_154420.md",
-      "scraped_at": "2026-06-01T15:44:20Z",
+      "latest_file": "Smart_Watch_20260531_051234.md",
+      "scraped_at": "2026-05-31T05:12:34Z",
       "asin_count": 10,
       "market": "amazon.com",
-      "bsr_node_id": "12097478011",
+      "bsr_node_id": "7939901011",
       "status": "ok",
       "history_files": [
-        "Wireless_Earbuds_20260601_154420.md",
-        "Wireless_Earbuds_20260531_054752.md",
-        "Wireless_Earbuds_20260531_052614.md"
+        "Smart_Watch_20260531_051234.md",
+        "Smart_Watch_20260531_042310.md",
+        "Smart_Watch_20260531_040138.md"
       ]
     },
     "Yoga Mat": {
@@ -62,21 +49,34 @@
         "Yoga_Mat_20260530_181720.md"
       ]
     },
-    "Smart Watch": {
+    "Wireless Earbuds": {
       "aliases": [],
-      "latest_file": "Smart_Watch_20260531_051234.md",
-      "scraped_at": "2026-05-31T05:12:34Z",
+      "latest_file": "Wireless_Earbuds_20260601_154420.md",
+      "scraped_at": "2026-06-01T15:44:20Z",
       "asin_count": 10,
       "market": "amazon.com",
-      "bsr_node_id": "7939901011",
+      "bsr_node_id": "12097478011",
       "status": "ok",
       "history_files": [
-        "Smart_Watch_20260531_051234.md",
-        "Smart_Watch_20260531_042310.md",
-        "Smart_Watch_20260531_040138.md"
+        "Wireless_Earbuds_20260601_154420.md",
+        "Wireless_Earbuds_20260531_054752.md",
+        "Wireless_Earbuds_20260531_052614.md"
+      ]
+    },
+    "Robot Vacuum": {
+      "aliases": [],
+      "latest_file": "Robot_Vacuum_20260601_162821.md",
+      "scraped_at": "2026-06-01T16:28:21Z",
+      "asin_count": 10,
+      "market": "amazon.com",
+      "bsr_node_id": "3743561",
+      "status": "ok",
+      "history_files": [
+        "Robot_Vacuum_20260601_162821.md",
+        "Robot_Vacuum_20260601_160034.md"
       ]
     }
   },
-  "updated_at": "2026-10-27T21:50:04Z",
+  "updated_at": "2026-10-28T22:15:09Z",
   "freshness_days": 7
 }
