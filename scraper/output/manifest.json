@@ -7,18 +7,31 @@
         "宠物饮水机",
         "猫饮水机"
       ],
-      "latest_file": "Pet_Water_Fountain_20261112_000350.md",
-      "scraped_at": "2026-11-12T00:03:50Z",
+      "latest_file": "Pet_Water_Fountain_20261112_231337.md",
+      "scraped_at": "2026-11-12T23:13:37Z",
       "asin_count": 10,
       "market": "amazon.com",
       "bsr_node_id": "2975263011",
       "status": "ok",
       "history_files": [
+        "Pet_Water_Fountain_20261112_231337.md",
         "Pet_Water_Fountain_20261112_000350.md",
         "Pet_Water_Fountain_20261110_225518.md",
         "Pet_Water_Fountain_20261110_011341.md",
-        "Pet_Water_Fountain_20261108_214349.md",
-        "Pet_Water_Fountain_20261106_224503.md"
+        "Pet_Water_Fountain_20261108_214349.md"
+      ]
+    },
+    "Robot Vacuum": {
+      "aliases": [],
+      "latest_file": "Robot_Vacuum_20260601_162821.md",
+      "scraped_at": "2026-06-01T16:28:21Z",
+      "asin_count": 10,
+      "market": "amazon.com",
+      "bsr_node_id": "3743561",
+      "status": "ok",
+      "history_files": [
+        "Robot_Vacuum_20260601_162821.md",
+        "Robot_Vacuum_20260601_160034.md"
       ]
     },
     "Smart Watch": {
@@ -62,21 +75,8 @@
         "Wireless_Earbuds_20260531_054752.md",
         "Wireless_Earbuds_20260531_052614.md"
       ]
-    },
-    "Robot Vacuum": {
-      "aliases": [],
-      "latest_file": "Robot_Vacuum_20260601_162821.md",
-      "scraped_at": "2026-06-01T16:28:21Z",
-      "asin_count": 10,
-      "market": "amazon.com",
-      "bsr_node_id": "3743561",
-      "status": "ok",
-      "history_files": [
-        "Robot_Vacuum_20260601_162821.md",
-        "Robot_Vacuum_20260601_160034.md"
-      ]
     }
   },
-  "updated_at": "2026-11-12T00:03:55Z",
+  "updated_at": "2026-11-12T23:13:40Z",
   "freshness_days": 7
 }
