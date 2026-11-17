@@ -7,18 +7,18 @@
         "宠物饮水机",
         "猫饮水机"
       ],
-      "latest_file": "Pet_Water_Fountain_20261115_222841.md",
-      "scraped_at": "2026-11-15T22:28:41Z",
+      "latest_file": "Pet_Water_Fountain_20261117_012941.md",
+      "scraped_at": "2026-11-17T01:29:41Z",
       "asin_count": 10,
       "market": "amazon.com",
       "bsr_node_id": "2975263011",
       "status": "ok",
       "history_files": [
+        "Pet_Water_Fountain_20261117_012941.md",
         "Pet_Water_Fountain_20261115_222841.md",
         "Pet_Water_Fountain_20261114_220155.md",
         "Pet_Water_Fountain_20261113_231543.md",
-        "Pet_Water_Fountain_20261112_231337.md",
-        "Pet_Water_Fountain_20261112_000350.md"
+        "Pet_Water_Fountain_20261112_231337.md"
       ]
     },
     "Yoga Mat": {
@@ -77,6 +77,6 @@
       ]
     }
   },
-  "updated_at": "2026-11-15T22:28:44Z",
+  "updated_at": "2026-11-17T01:29:44Z",
   "freshness_days": 7
 }
