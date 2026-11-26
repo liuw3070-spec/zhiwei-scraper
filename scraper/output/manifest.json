@@ -21,18 +21,18 @@
         "宠物饮水机",
         "猫饮水机"
       ],
-      "latest_file": "Pet_Water_Fountain_20261124_035615.md",
-      "scraped_at": "2026-11-24T03:56:15Z",
+      "latest_file": "Pet_Water_Fountain_20261126_013127.md",
+      "scraped_at": "2026-11-26T01:31:27Z",
       "asin_count": 10,
       "market": "amazon.com",
       "bsr_node_id": "2975263011",
       "status": "ok",
       "history_files": [
+        "Pet_Water_Fountain_20261126_013127.md",
         "Pet_Water_Fountain_20261124_035615.md",
         "Pet_Water_Fountain_20261122_231158.md",
         "Pet_Water_Fountain_20261121_224824.md",
-        "Pet_Water_Fountain_20261120_234453.md",
-        "Pet_Water_Fountain_20261120_001530.md"
+        "Pet_Water_Fountain_20261120_234453.md"
       ]
     },
     "Robot Vacuum": {
@@ -77,6 +77,6 @@
       ]
     }
   },
-  "updated_at": "2026-11-25T01:41:18Z",
+  "updated_at": "2026-11-26T01:31:29Z",
   "freshness_days": 7
 }
